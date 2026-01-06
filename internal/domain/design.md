@@ -827,18 +827,20 @@ func (r *CachedProviderRepository) Load() error {
 
 ## FormatConverter 详细设计
 
-### 架构：Registry + Hub 模式
+### 架构：Registry 直连模式
 
-采用 **Hub 模式**，以 OpenAI 格式作为中间格式，实现任意格式互转：
+采用**全量直连模式**，每对格式都有专门的转换器，保证转换精确性：
 
 ```
-Claude ←→ OpenAI (Hub) ←→ Gemini
-              ↑
-           Codex
+Claude ←→ OpenAI
+Claude ←→ Codex
+Claude ←→ Gemini
+OpenAI ←→ Codex
+OpenAI ←→ Gemini
+Codex  ←→ Gemini
 ```
 
-- 每种格式只需实现 `X → OpenAI` 和 `OpenAI → X`
-- 常用路径可直接实现（如 Claude↔OpenAI）跳过 Hub
+共 12 个转换器（双向各 6 对）。
 
 ### 数据结构
 
@@ -874,16 +876,14 @@ type ToolCallState struct {
 type TransformerRegistry struct {
     requests  map[ClientType]map[ClientType]RequestTransformer
     responses map[ClientType]map[ClientType]ResponseTransformer
-    hub       ClientType  // 中间格式，默认 OpenAI
 }
 
 func NewTransformerRegistry() *TransformerRegistry {
     r := &TransformerRegistry{
         requests:  make(map[ClientType]map[ClientType]RequestTransformer),
         responses: make(map[ClientType]map[ClientType]ResponseTransformer),
-        hub:       ClientTypeOpenAI,
     }
-    // 注册内置转换器
+    // 注册全部 12 个转换器
     r.registerBuiltins()
     return r
 }
@@ -891,34 +891,32 @@ func NewTransformerRegistry() *TransformerRegistry {
 // 注册转换器
 func (r *TransformerRegistry) Register(from, to ClientType, req RequestTransformer, resp ResponseTransformer)
 
-// 转换请求（支持直连或 Hub 中转）
+// 转换请求（直连）
 func (r *TransformerRegistry) TransformRequest(from, to ClientType, body []byte, model string, stream bool) ([]byte, error) {
     if from == to {
         return body, nil
     }
 
-    // 1. 尝试直连
-    if transformer := r.getRequestTransformer(from, to); transformer != nil {
-        return transformer.Transform(body, model, stream)
+    transformer := r.getRequestTransformer(from, to)
+    if transformer == nil {
+        return nil, fmt.Errorf("no transformer for %s -> %s", from, to)
     }
-
-    // 2. 通过 Hub 中转
-    hubBody, err := r.TransformRequest(from, r.hub, body, model, stream)
-    if err != nil {
-        return nil, err
-    }
-    return r.TransformRequest(r.hub, to, hubBody, model, stream)
+    return transformer.Transform(body, model, stream)
 }
 ```
 
-### 转换矩阵
+### 转换矩阵（全量直连）
 
 | From \ To | Claude | OpenAI | Codex | Gemini |
 |-----------|--------|--------|-------|--------|
-| Claude | - | ✅ 直连 | Hub | Hub |
-| OpenAI | ✅ 直连 | - | ✅ 直连 | Hub |
-| Codex | Hub | ✅ 直连 | - | Hub |
-| Gemini | Hub | Hub | Hub | - |
+| Claude | - | ✅ | ✅ | ✅ |
+| OpenAI | ✅ | - | ✅ | ✅ |
+| Codex | ✅ | ✅ | - | ✅ |
+| Gemini | ✅ | ✅ | ✅ | - |
+
+共 12 个转换器，每个包含：
+- `RequestTransformer` - 请求体转换
+- `ResponseTransformer` - 响应转换（含流式）
 
 ### SSE 解析
 
