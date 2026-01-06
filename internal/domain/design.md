@@ -425,3 +425,186 @@ Executor
   ↓
 Response
 ```
+
+---
+
+## 存储层设计
+
+### 数据库
+
+SQLite，单文件，简单可靠。同步写入，优先保障数据正确。
+
+### 架构
+
+```
+业务层
+  ↓
+CachedRepository（缓存层）
+  ↓
+SQLiteRepository（持久层）
+  ↓
+SQLite
+```
+
+### 缓存策略
+
+| 实体 | 缓存 | 加载方式 | 缓存 Key |
+|-----|------|---------|---------|
+| Provider | ✅ | 启动全量 | ID |
+| Route | ✅ | 启动全量 | - (slice) |
+| RoutingStrategy | ✅ | 启动全量 | ProjectID |
+| RetryConfig | ✅ | 启动全量 | ID |
+| Project | ✅ | 启动全量 | ID |
+| Session | ✅ | 懒加载 | SessionID |
+| ProxyRequest | ❌ | - | - |
+| ProxyUpstreamAttempt | ❌ | - | - |
+
+### Repository 接口
+
+```go
+type ProviderRepository interface {
+    Create(provider *Provider) error
+    Update(provider *Provider) error
+    Delete(id uint64) error
+    GetByID(id uint64) (*Provider, error)
+    List() ([]*Provider, error)
+}
+
+type RouteRepository interface {
+    Create(route *Route) error
+    Update(route *Route) error
+    Delete(id uint64) error
+    GetByID(id uint64) (*Route, error)
+    List() ([]*Route, error)
+}
+
+type RoutingStrategyRepository interface {
+    Create(strategy *RoutingStrategy) error
+    Update(strategy *RoutingStrategy) error
+    Delete(id uint64) error
+    GetByProjectID(projectID uint64) (*RoutingStrategy, error)
+    List() ([]*RoutingStrategy, error)
+}
+
+type RetryConfigRepository interface {
+    Create(config *RetryConfig) error
+    Update(config *RetryConfig) error
+    Delete(id uint64) error
+    GetByID(id uint64) (*RetryConfig, error)
+    GetDefault() (*RetryConfig, error)
+    List() ([]*RetryConfig, error)
+}
+
+type ProjectRepository interface {
+    Create(project *Project) error
+    Update(project *Project) error
+    Delete(id uint64) error
+    GetByID(id uint64) (*Project, error)
+    List() ([]*Project, error)
+}
+
+type SessionRepository interface {
+    Create(session *Session) error
+    Update(session *Session) error
+    GetBySessionID(sessionID string) (*Session, error)
+    List() ([]*Session, error)
+}
+
+type ProxyRequestRepository interface {
+    Create(req *ProxyRequest) error
+    Update(req *ProxyRequest) error
+    GetByID(id uint64) (*ProxyRequest, error)
+}
+
+type ProxyUpstreamAttemptRepository interface {
+    Create(attempt *ProxyUpstreamAttempt) error
+    Update(attempt *ProxyUpstreamAttempt) error
+    ListByProxyRequestID(proxyRequestID uint64) ([]*ProxyUpstreamAttempt, error)
+}
+```
+
+### 缓存包装层
+
+```go
+type CachedProviderRepository struct {
+    repo  ProviderRepository
+    cache map[uint64]*Provider
+    mu    sync.RWMutex
+}
+
+type CachedSessionRepository struct {
+    repo  SessionRepository
+    cache map[string]*Session  // SessionID → Session
+    mu    sync.RWMutex
+}
+```
+
+### 缓存自动刷新
+
+配置类 Repository 的 Create/Update/Delete 后自动刷新内存缓存：
+
+```go
+func (r *CachedProviderRepository) Create(provider *Provider) error {
+    if err := r.repo.Create(provider); err != nil {
+        return err
+    }
+    r.mu.Lock()
+    r.cache[provider.ID] = provider
+    r.mu.Unlock()
+    return nil
+}
+```
+
+### Session 懒加载 + 自动创建
+
+```go
+func (r *CachedSessionRepository) GetOrCreate(sessionID string, clientType ClientType) (*Session, error) {
+    r.mu.RLock()
+    if s, ok := r.cache[sessionID]; ok {
+        r.mu.RUnlock()
+        return s, nil
+    }
+    r.mu.RUnlock()
+
+    // 查库
+    s, err := r.repo.GetBySessionID(sessionID)
+    if err == nil {
+        r.mu.Lock()
+        r.cache[sessionID] = s
+        r.mu.Unlock()
+        return s, nil
+    }
+
+    // 不存在，创建
+    s = &Session{
+        SessionID:  sessionID,
+        ClientType: clientType,
+        ProjectID:  0,  // 默认无 Project
+    }
+    if err := r.repo.Create(s); err != nil {
+        return nil, err
+    }
+
+    r.mu.Lock()
+    r.cache[sessionID] = s
+    r.mu.Unlock()
+    return s, nil
+}
+```
+
+### 启动加载
+
+```go
+func (r *CachedProviderRepository) Load() error {
+    list, err := r.repo.List()
+    if err != nil {
+        return err
+    }
+    r.mu.Lock()
+    for _, p := range list {
+        r.cache[p.ID] = p
+    }
+    r.mu.Unlock()
+    return nil
+}
+```
