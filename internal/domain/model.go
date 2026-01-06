@@ -21,6 +21,9 @@ type ProviderConfigCustom struct {
 
 	// 某个 Client 有特殊的 BaseURL
 	ClientBaseURL map[ClientType]string
+
+	// Model 映射: RequestModel → MappedModel
+	ModelMapping map[string]string
 }
 
 type ProviderConfigAntigravity struct {
@@ -28,6 +31,9 @@ type ProviderConfigAntigravity struct {
 	Email string
 	// Refresh Token
 	RefreshToken string
+
+	// Model 映射: RequestModel → MappedModel
+	ModelMapping map[string]string
 }
 
 type ProviderConfig struct {
@@ -88,8 +94,14 @@ type Route struct {
 	ClientType ClientType
 	ProviderID uint64
 
-	// 数字越小越优先
-	Priority int
+	// 位置，数字越小越优先
+	Position int
+
+	// 重试配置，0 表示使用系统默认
+	RetryConfigID uint64
+
+	// Model 映射: RequestModel → MappedModel，优先级高于 Provider
+	ModelMapping map[string]string
 }
 
 type RequestInfo struct {
@@ -113,6 +125,9 @@ type ProxyRequest struct {
 	RequestID  string
 	SessionID  string
 	ClientType ClientType
+
+	RequestModel  string
+	ResponseModel string
 
 	StartTime time.Time
 	EndTime   time.Time
@@ -160,4 +175,61 @@ type ProxyUpstreamAttempt struct {
 	CacheReadCount   uint64
 	CacheWriteCount  uint64
 	Cost             uint64
+}
+
+// 重试配置
+type RetryConfig struct {
+	ID        uint64
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	// 配置名称，便于复用
+	Name string
+
+	// 是否为系统默认配置
+	IsDefault bool
+
+	// 最大重试次数
+	MaxRetries int
+
+	// 初始重试间隔
+	InitialInterval time.Duration
+
+	// 退避倍率，1.0 表示固定间隔
+	BackoffRate float64
+
+	// 最大间隔上限
+	MaxInterval time.Duration
+}
+
+// 路由策略类型
+type RoutingStrategyType string
+
+var (
+	// 按 Position 优先级排序
+	RoutingStrategyPriority RoutingStrategyType = "priority"
+	// 加权随机
+	RoutingStrategyWeightedRandom RoutingStrategyType = "weighted_random"
+)
+
+// 路由策略配置（策略特定参数）
+type RoutingStrategyConfig struct {
+	// 加权随机策略的权重配置等
+	// 根据具体策略扩展
+}
+
+// 路由策略
+type RoutingStrategy struct {
+	ID        uint64
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	// 0 表示全局策略
+	ProjectID uint64
+
+	// 策略类型
+	Type RoutingStrategyType
+
+	// 策略特定配置
+	Config *RoutingStrategyConfig
 }
