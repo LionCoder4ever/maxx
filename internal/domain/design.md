@@ -26,7 +26,13 @@ Executor.Execute(ctx, w, req, matchedRoutes)
   │   ├── 创建 ProxyUpstreamAttempt
   │   ├── 计算 MappedModel (Route > Provider > 原始)
   │   ├── ctx 写入 MappedModel
+  │   ├── FormatConverter.NeedConvert() ?
+  │   │   ├── Yes → 转换请求格式
+  │   │   └── No  → 保持原格式
   │   ├── ProviderAdapter.Execute()
+  │   ├── FormatConverter.NeedConvert() ?
+  │   │   ├── Yes → 转换响应格式
+  │   │   └── No  → 保持原格式
   │   ├── 成功 → 更新 Attempt，跳出
   │   ├── 未写入客户端 + 失败 → 按 RetryConfig 重试 / 下一个 Route
   │   └── 已写入客户端 + 失败 → 不可重试，整体失败
@@ -42,86 +48,128 @@ Response
 
 ## 组件设计
 
-### 1. ClientAdapter（识别层）
+### 1. ClientAdapter（识别层，统一实现）
 
-每种 ClientType 一个，职责：
-- 识别请求是否属于该 ClientType
+统一实现，职责：
+- 识别请求的 ClientType（两层检测：端点优先，请求体 fallback）
 - 提取 SessionID、RequestModel 等信息
 
 ```go
-type ClientAdapter interface {
-    // 判断请求是否属于该 ClientType
-    Match(req *http.Request) bool
+type ClientAdapter struct {}
 
-    // 提取请求信息
-    ExtractInfo(req *http.Request) (*ClientRequestInfo, error)
-}
+// 识别 ClientType
+// 第一层：端点检测
+//   /v1/messages          → Claude
+//   /v1/responses         → Codex
+//   /v1/chat/completions  → OpenAI
+//   /v1beta/models/*      → Gemini
+// 第二层：请求体检测（fallback）
+//   contents[]            → Gemini
+//   input[]               → Codex
+//   messages[] + system   → Claude
+//   messages[]            → OpenAI
+func (a *ClientAdapter) Match(req *http.Request) (ClientType, bool)
+
+// 提取请求信息
+func (a *ClientAdapter) ExtractInfo(req *http.Request, clientType ClientType) (*ClientRequestInfo, error)
 
 type ClientRequestInfo struct {
-    SessionID    string
-    RequestModel string
+    SessionID    string  // 来源：metadata.session_id / Header X-Session-Id / 确定性生成
+    RequestModel string  // 来源：请求体 model 字段 / URL 路径（Gemini）
 }
 ```
 
-### 2. ProviderAdapter（执行层）
+### 2. FormatConverter（格式转换层）
 
-按 Provider 分目录，每个目录下按 ClientType 实现：
+独立的格式转换层，与 ProviderAdapter 解耦。
+
+职责：
+- 判断是否需要格式转换
+- 请求格式转换（Claude↔OpenAI↔Codex↔Gemini）
+- 响应格式转换（含流式）
+
+```go
+type FormatConverter struct {
+    converters map[string]Converter  // "claude->openai" → Converter
+}
+
+// 判断是否需要转换
+// 如果客户端格式在 Provider.SupportedClientTypes 中，则不需要转换
+func (c *FormatConverter) NeedConvert(clientType ClientType, provider *Provider) bool {
+    return !contains(provider.SupportedClientTypes, clientType)
+}
+
+// 获取目标格式（取 SupportedClientTypes 第一个）
+func (c *FormatConverter) GetTargetFormat(provider *Provider) ClientType {
+    return provider.SupportedClientTypes[0]
+}
+
+// 请求转换
+func (c *FormatConverter) ConvertRequest(from, to ClientType, body []byte) ([]byte, error)
+
+// 响应转换
+func (c *FormatConverter) ConvertResponse(from, to ClientType, body []byte) ([]byte, error)
+
+// 流式响应转换
+func (c *FormatConverter) ConvertStreamChunk(from, to ClientType, chunk []byte) ([]byte, error)
+```
+
+### 3. ProviderAdapter（执行层）
+
+按 Provider 分目录，**只负责通信**，不负责格式转换：
 
 ```
 adapters/
 ├── custom/
-│   ├── claude.go
-│   ├── openai.go
-│   ├── gemini.go
-│   └── codex.go
+│   └── adapter.go      # 通用 HTTP 透传
 └── antigravity/
-    ├── claude.go
-    └── openai.go
+    └── adapter.go      # Antigravity 特殊认证
 ```
 
 职责：
-- 请求转换
-- 执行请求（含流式）
-- 响应处理
-- 失败判定
+- URL 构建（BaseURL + 路径）
+- Header 处理（认证等）
+- 请求透传
+- 流式响应处理
+- 错误检测（HTTP 状态码、Body 错误）
 - 过程中将 ResponseModel 写入 ctx
 
 ```go
 type ProviderAdapter interface {
-    // 支持的 ClientType 列表
+    // 支持的 ClientType 列表（同时表示原生支持的格式）
     SupportedClientTypes() []ClientType
 
-    // 执行代理请求
-    // 内部根据 ClientType 分发到具体实现
-    // 成功时将 ResponseModel 写入 ctx
-    // 失败返回 ProxyError
+    // 执行代理请求（纯通信，格式转换由 FormatConverter 处理）
     Execute(ctx context.Context, w http.ResponseWriter, req *http.Request) error
 }
 ```
 
-Provider 内部实现示例：
+### 4. 全局注册
 
-```go
-type CustomProvider struct {
-    config   *ProviderConfigCustom
-    handlers map[ClientType]ClientHandler
-}
-
-func (p *CustomProvider) Execute(ctx context.Context, w http.ResponseWriter, req *http.Request) error {
-    clientType := GetClientType(ctx)
-    handler := p.handlers[clientType]
-    return handler.Handle(ctx, w, req)
-}
-```
-
-### 3. 全局注册
-
-只到 ProviderType 级别，Provider 内部自己注册 ClientType：
+只到 ProviderType 级别：
 
 ```go
 var providerAdapters = map[ProviderType]NewProviderAdapterFunc{
     "custom":      NewCustomProviderAdapter,
     "antigravity": NewAntigravityProviderAdapter,
+}
+```
+
+### 5. 格式转换决策
+
+```go
+clientFormat := session.ClientType
+
+if contains(provider.SupportedClientTypes, clientFormat) {
+    // Provider 原生支持该格式，透传
+    targetFormat = clientFormat
+} else {
+    // 需要转换，取 SupportedClientTypes 第一个作为目标格式
+    targetFormat = provider.SupportedClientTypes[0]
+}
+
+if clientFormat != targetFormat {
+    body = converter.ConvertRequest(clientFormat, targetFormat, body)
 }
 ```
 
