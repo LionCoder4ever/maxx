@@ -39,7 +39,7 @@ func (a *Adapter) Match(req *http.Request) (domain.ClientType, bool) {
 	switch {
 	case strings.HasPrefix(path, "/v1/messages"):
 		return domain.ClientTypeClaude, true
-	case strings.HasPrefix(path, "/v1/responses"):
+	case strings.HasPrefix(path, "/v1/responses"), strings.HasPrefix(path, "/responses"):
 		return domain.ClientTypeCodex, true
 	case strings.HasPrefix(path, "/v1/chat/completions"):
 		return domain.ClientTypeOpenAI, true
@@ -197,7 +197,7 @@ func (a *Adapter) DetectClientType(req *http.Request, body []byte) domain.Client
 	switch {
 	case strings.HasPrefix(path, "/v1/messages"):
 		return domain.ClientTypeClaude
-	case strings.HasPrefix(path, "/v1/responses"):
+	case strings.HasPrefix(path, "/v1/responses"), strings.HasPrefix(path, "/responses"):
 		return domain.ClientTypeCodex
 	case strings.HasPrefix(path, "/v1/chat/completions"):
 		return domain.ClientTypeOpenAI
