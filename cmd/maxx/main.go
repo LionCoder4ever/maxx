@@ -121,8 +121,7 @@ func main() {
 	mux.Handle("/v1/messages", proxyHandler)
 	// OpenAI API
 	mux.Handle("/v1/chat/completions", proxyHandler)
-	// Codex API (both with and without /v1 prefix)
-	mux.Handle("/v1/responses", proxyHandler)
+	// Codex API
 	mux.Handle("/responses", proxyHandler)
 	// Gemini API (Google AI Studio style)
 	mux.Handle("/v1beta/models/", proxyHandler)

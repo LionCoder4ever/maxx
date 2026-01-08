@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/Bowl42/maxx-next/internal/adapter/client"
@@ -34,6 +35,8 @@ func NewProxyHandler(
 
 // ServeHTTP handles proxy requests
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[Proxy] Received request: %s %s", r.Method, r.URL.Path)
+
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -49,6 +52,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Detect client type and extract info
 	clientType := h.clientAdapter.DetectClientType(r, body)
+	log.Printf("[Proxy] Detected client type: %s", clientType)
 	if clientType == "" {
 		writeError(w, http.StatusBadRequest, "unable to detect client type")
 		return
