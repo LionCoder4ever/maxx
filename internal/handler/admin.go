@@ -52,7 +52,7 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "routing-strategies":
 		h.handleRoutingStrategies(w, r, id)
 	case "requests":
-		h.handleProxyRequests(w, r, id)
+		h.handleProxyRequests(w, r, id, parts)
 	case "settings":
 		h.handleSettings(w, r, parts)
 	case "proxy-status":
@@ -385,7 +385,14 @@ func (h *AdminHandler) handleRoutingStrategies(w http.ResponseWriter, r *http.Re
 }
 
 // ProxyRequest handlers
-func (h *AdminHandler) handleProxyRequests(w http.ResponseWriter, r *http.Request, id uint64) {
+// Routes: /admin/requests, /admin/requests/{id}, /admin/requests/{id}/attempts
+func (h *AdminHandler) handleProxyRequests(w http.ResponseWriter, r *http.Request, id uint64, parts []string) {
+	// Check for sub-resource: /admin/requests/{id}/attempts
+	if len(parts) > 3 && parts[3] == "attempts" && id > 0 {
+		h.handleProxyUpstreamAttempts(w, r, id)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		if id > 0 {
@@ -414,6 +421,21 @@ func (h *AdminHandler) handleProxyRequests(w http.ResponseWriter, r *http.Reques
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
+}
+
+// ProxyUpstreamAttempt handlers
+func (h *AdminHandler) handleProxyUpstreamAttempts(w http.ResponseWriter, r *http.Request, proxyRequestID uint64) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	attempts, err := h.svc.GetProxyUpstreamAttempts(proxyRequestID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, attempts)
 }
 
 // Settings handlers

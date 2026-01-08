@@ -18,6 +18,7 @@ import type {
   RoutingStrategy,
   CreateRoutingStrategyData,
   ProxyRequest,
+  ProxyUpstreamAttempt,
   ProxyStatus,
   PaginationParams,
   WSMessageType,
@@ -197,6 +198,11 @@ export class HttpTransport implements Transport {
   async getProxyRequest(id: number): Promise<ProxyRequest> {
     const { data } = await this.client.get<ProxyRequest>(`/requests/${id}`);
     return data;
+  }
+
+  async getProxyUpstreamAttempts(proxyRequestId: number): Promise<ProxyUpstreamAttempt[]> {
+    const { data } = await this.client.get<ProxyUpstreamAttempt[]>(`/requests/${proxyRequestId}/attempts`);
+    return data ?? [];
   }
 
   // ===== Proxy Status API =====

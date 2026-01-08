@@ -1,13 +1,15 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui';
-import { useProxyRequest, useProxyRequestUpdates } from '@/hooks/queries';
-import { ArrowLeft, Clock, Zap, FileText, AlertCircle } from 'lucide-react';
+import { useProxyRequest, useProxyUpstreamAttempts, useProxyRequestUpdates } from '@/hooks/queries';
+import { ArrowLeft, Clock, Zap, FileText, AlertCircle, Server, RotateCcw } from 'lucide-react';
 import { statusVariant } from './index';
+import type { ProxyUpstreamAttempt } from '@/lib/transport';
 
 export function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: request, isLoading, error } = useProxyRequest(Number(id));
+  const { data: attempts } = useProxyUpstreamAttempts(Number(id));
 
   // Subscribe to real-time updates
   useProxyRequestUpdates();
@@ -183,6 +185,92 @@ export function RequestDetailPage() {
             <pre className="whitespace-pre-wrap break-words font-mono text-sm text-red-600 dark:text-red-400">
               {request.error}
             </pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upstream Attempts */}
+      {attempts && attempts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Upstream Attempts ({attempts.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {attempts.map((attempt: ProxyUpstreamAttempt, index: number) => (
+                <div
+                  key={attempt.id}
+                  className="rounded-lg border p-4"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-sm font-medium dark:bg-gray-800">
+                        {index + 1}
+                      </span>
+                      <Badge variant={statusVariant[attempt.status as keyof typeof statusVariant] || 'secondary'}>
+                        {attempt.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Server className="h-4 w-4" />
+                        Route #{attempt.routeID} / Provider #{attempt.providerID}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Token Stats */}
+                  {(attempt.inputTokenCount > 0 || attempt.outputTokenCount > 0) && (
+                    <div className="mb-3 flex gap-4 text-sm text-gray-500">
+                      <span>Input: {attempt.inputTokenCount}</span>
+                      <span>Output: {attempt.outputTokenCount}</span>
+                      {attempt.cacheReadCount > 0 && <span>Cache Read: {attempt.cacheReadCount}</span>}
+                      {attempt.cacheWriteCount > 0 && <span>Cache Write: {attempt.cacheWriteCount}</span>}
+                    </div>
+                  )}
+
+                  {/* Request Info */}
+                  {attempt.requestInfo && (
+                    <details className="mb-2">
+                      <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                        Request Details
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="info">{attempt.requestInfo.method}</Badge>
+                          <code className="truncate rounded bg-gray-100 px-2 py-1 font-mono text-xs dark:bg-gray-800">
+                            {attempt.requestInfo.url}
+                          </code>
+                        </div>
+                        <pre className="max-h-32 overflow-auto rounded bg-gray-100 p-2 font-mono text-xs dark:bg-gray-800">
+                          {formatJSON(attempt.requestInfo.headers)}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Response Info */}
+                  {attempt.responseInfo && (
+                    <details>
+                      <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+                        Response Details
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <Badge variant={attempt.responseInfo.status >= 400 ? 'danger' : 'success'}>
+                          {attempt.responseInfo.status}
+                        </Badge>
+                        <pre className="max-h-32 overflow-auto rounded bg-gray-100 p-2 font-mono text-xs dark:bg-gray-800">
+                          {formatJSON(attempt.responseInfo.headers)}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

@@ -17,6 +17,7 @@ import type {
   RoutingStrategy,
   CreateRoutingStrategyData,
   ProxyRequest,
+  ProxyUpstreamAttempt,
   ProxyStatus,
   PaginationParams,
   WSMessageType,
@@ -173,6 +174,10 @@ export class WailsTransport implements Transport {
 
   async getProxyRequest(id: number): Promise<ProxyRequest> {
     return this.call<ProxyRequest>('AdminService.GetProxyRequest', id);
+  }
+
+  async getProxyUpstreamAttempts(proxyRequestId: number): Promise<ProxyUpstreamAttempt[]> {
+    return this.call<ProxyUpstreamAttempt[]>('AdminService.GetProxyUpstreamAttempts', proxyRequestId);
   }
 
   // ===== Proxy Status API =====

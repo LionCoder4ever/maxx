@@ -18,6 +18,7 @@ type AdminService struct {
 	retryConfigRepo     repository.RetryConfigRepository
 	routingStrategyRepo repository.RoutingStrategyRepository
 	proxyRequestRepo    repository.ProxyRequestRepository
+	attemptRepo         repository.ProxyUpstreamAttemptRepository
 	settingRepo         repository.SystemSettingRepository
 	serverAddr          string
 }
@@ -31,6 +32,7 @@ func NewAdminService(
 	retryConfigRepo repository.RetryConfigRepository,
 	routingStrategyRepo repository.RoutingStrategyRepository,
 	proxyRequestRepo repository.ProxyRequestRepository,
+	attemptRepo repository.ProxyUpstreamAttemptRepository,
 	settingRepo repository.SystemSettingRepository,
 	serverAddr string,
 ) *AdminService {
@@ -42,6 +44,7 @@ func NewAdminService(
 		retryConfigRepo:     retryConfigRepo,
 		routingStrategyRepo: routingStrategyRepo,
 		proxyRequestRepo:    proxyRequestRepo,
+		attemptRepo:         attemptRepo,
 		settingRepo:         settingRepo,
 		serverAddr:          serverAddr,
 	}
@@ -195,6 +198,10 @@ func (s *AdminService) GetProxyRequests(limit, offset int) ([]*domain.ProxyReque
 
 func (s *AdminService) GetProxyRequest(id uint64) (*domain.ProxyRequest, error) {
 	return s.proxyRequestRepo.GetByID(id)
+}
+
+func (s *AdminService) GetProxyUpstreamAttempts(proxyRequestID uint64) ([]*domain.ProxyUpstreamAttempt, error) {
+	return s.attemptRepo.ListByProxyRequestID(proxyRequestID)
 }
 
 // ===== Settings API =====

@@ -16,6 +16,7 @@ import type {
   RoutingStrategy,
   CreateRoutingStrategyData,
   ProxyRequest,
+  ProxyUpstreamAttempt,
   PaginationParams,
   ProxyStatus,
   WSMessageType,
@@ -68,6 +69,7 @@ export interface Transport {
   // ===== ProxyRequest API (只读) =====
   getProxyRequests(params?: PaginationParams): Promise<ProxyRequest[]>;
   getProxyRequest(id: number): Promise<ProxyRequest>;
+  getProxyUpstreamAttempts(proxyRequestId: number): Promise<ProxyUpstreamAttempt[]>;
 
   // ===== Proxy Status API =====
   getProxyStatus(): Promise<ProxyStatus>;

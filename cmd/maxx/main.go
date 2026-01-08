@@ -127,6 +127,7 @@ func main() {
 		cachedRetryConfigRepo,
 		cachedRoutingStrategyRepo,
 		proxyRequestRepo,
+		attemptRepo,
 		settingRepo,
 		*addr,
 	)

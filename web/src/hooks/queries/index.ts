@@ -62,6 +62,7 @@ export {
   requestKeys,
   useProxyRequests,
   useProxyRequest,
+  useProxyUpstreamAttempts,
   useProxyRequestUpdates,
 } from './use-requests';
 

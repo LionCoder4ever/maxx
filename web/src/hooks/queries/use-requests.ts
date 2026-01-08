@@ -15,6 +15,7 @@ export const requestKeys = {
   list: (params?: PaginationParams) => [...requestKeys.lists(), params] as const,
   details: () => [...requestKeys.all, 'detail'] as const,
   detail: (id: number) => [...requestKeys.details(), id] as const,
+  attempts: (id: number) => [...requestKeys.detail(id), 'attempts'] as const,
 };
 
 // 获取所有 ProxyRequests
@@ -31,6 +32,15 @@ export function useProxyRequest(id: number) {
     queryKey: requestKeys.detail(id),
     queryFn: () => transport.getProxyRequest(id),
     enabled: id > 0,
+  });
+}
+
+// 获取 ProxyRequest 的 Attempts
+export function useProxyUpstreamAttempts(proxyRequestId: number) {
+  return useQuery({
+    queryKey: requestKeys.attempts(proxyRequestId),
+    queryFn: () => transport.getProxyUpstreamAttempts(proxyRequestId),
+    enabled: proxyRequestId > 0,
   });
 }
 

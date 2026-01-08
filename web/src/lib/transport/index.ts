@@ -24,6 +24,8 @@ export type {
   CreateRoutingStrategyData,
   ProxyRequest,
   ProxyRequestStatus,
+  ProxyUpstreamAttempt,
+  ProxyUpstreamAttemptStatus,
   RequestInfo,
   ResponseInfo,
   // 分页
