@@ -320,33 +320,31 @@ function LogRow({
   const statusCode = request.responseInfo?.status;
 
   return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes subtle-pulse {
-          0%, 100% { background-color: rgba(0, 120, 212, 0.05); }
-          50% { background-color: rgba(0, 120, 212, 0.15); }
-        }
-        .animate-subtle-pulse {
-          animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-      `}} />
-      <TableRow
-        onClick={onClick}
-        className={cn(
-          "cursor-pointer group border-none transition-all duration-300",
-          // Base styles
-          !isPending && !isRecent && "hover:bg-surface-hover/50 border-l-2 border-l-transparent",
-          
-          // Failed state
-          isFailed && "bg-error/5 hover:bg-error/10 border-l-2 border-l-transparent",
-          
-          // Active/Pending state - Pulse Effect
-          isPending && "animate-subtle-pulse border-l-2 border-l-accent",
+    <TableRow
+      onClick={onClick}
+      className={cn(
+        "cursor-pointer group border-none transition-all duration-500 relative overflow-hidden",
+        // Base hover
+        !isPending && !isRecent && "hover:bg-surface-hover/50",
 
-          // New Item Flash Animation
-          isRecent && !isPending && "animate-in fade-in duration-700 bg-accent/40 border-l-2 border-l-accent"
-        )}
-      >
+        // Failed state - Red left border (via shadow) and subtle red bg
+        isFailed && "bg-error/5 hover:bg-error/10 shadow-[inset_3px_0_0_0_rgba(239,68,68,0.4)]",
+
+        // Active/Pending state - Blue left border
+        isPending && "shadow-[inset_3px_0_0_0_#0078D4]",
+
+        // New Item Flash Animation
+        isRecent && !isPending && "bg-accent/20 shadow-[inset_3px_0_0_0_#0078D4]"
+      )}
+    >
+      {/* Marquee 背景动画 (仅在 streaming 时显示) */}
+      {isPending && (
+        <div
+          className="absolute inset-0 animate-marquee pointer-events-none opacity-30"
+          style={{ backgroundColor: 'rgba(0, 120, 212, 0.15)' }}
+        />
+      )}
+
       {/* Time */}
       <TableCell className="py-1 font-mono text-sm text-text-primary font-medium whitespace-nowrap">
         {formatTime(request.startTime || request.createdAt)}
@@ -438,7 +436,6 @@ function LogRow({
         <TokenCell count={request.cacheWriteCount} color="text-amber-400" />
       </TableCell>
     </TableRow>
-    </>
   );
 }
 
