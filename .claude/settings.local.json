@@ -16,7 +16,12 @@
       "Bash(npm run build:*)",
       "Bash(wc:*)",
       "Bash(sqlite3:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(xargs cat:*)",
+      "Bash(mkdir:*)",
+      "Bash(go test:*)",
+      "Bash(go run -)",
+      "Bash(go run -exec '' - <<'EOF'\npackage main\n\nimport (\n\t\"fmt\"\n\t\"github.com/Bowl42/maxx-next/internal/pricing\"\n)\n\nfunc main() {\n\tpt := pricing.DefaultPriceTable()\n\tmodels := []string{\n\t\t\"claude-haiku-4-5\",\n\t\t\"claude-haiku-4-5-20251001\",\n\t\t\"claude-sonnet-4-5-20250514\",\n\t}\n\tfor _, m := range models {\n\t\tp := pt.Get(m)\n\t\tif p != nil {\n\t\t\tfmt.Printf(\"%s → matched %s (input: %d)\\n\", m, p.ModelID, p.InputPriceMicro)\n\t\t} else {\n\t\t\tfmt.Printf(\"%s → NOT FOUND\\n\", m)\n\t\t}\n\t}\n}\nEOF)"
     ]
   }
 }

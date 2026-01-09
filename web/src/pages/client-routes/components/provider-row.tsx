@@ -30,10 +30,10 @@ function formatCost(microUsd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
-// 计算缓存利用率: (CacheRead + CacheWrite) / (Input + CacheRead + CacheWrite) × 100
+// 计算缓存利用率: (CacheRead + CacheWrite) / (Input + Output + CacheRead + CacheWrite) × 100
 function calcCacheRate(stats: ProviderStats): number {
   const cacheTotal = stats.totalCacheRead + stats.totalCacheWrite;
-  const total = stats.totalInputTokens + cacheTotal;
+  const total = stats.totalInputTokens + stats.totalOutputTokens + cacheTotal;
   if (total === 0) return 0;
   return (cacheTotal / total) * 100;
 }
@@ -131,7 +131,9 @@ export function ProviderRowContent({
         flex items-center gap-md p-md rounded-lg border transition-all duration-200 relative overflow-hidden
         ${
           enabled
-            ? 'bg-emerald-400/[0.03] border-emerald-400/30 shadow-sm'
+            ? streamingCount > 0
+              ? 'bg-emerald-400/[0.08] border-emerald-400/60 shadow-[0_0_15px_rgba(52,211,153,0.15)]'
+              : 'bg-emerald-400/[0.03] border-emerald-400/30 shadow-sm'
             : 'bg-surface-secondary/50 border-dashed border-border opacity-95'
         }
         ${isOverlay ? 'shadow-xl ring-2 ring-accent opacity-100' : ''}
@@ -140,8 +142,8 @@ export function ProviderRowContent({
       {/* Marquee 背景动画 (仅在有 streaming 请求时显示) */}
       {streamingCount > 0 && enabled && (
         <div
-          className="absolute inset-0 animate-marquee pointer-events-none opacity-40"
-          style={{ backgroundColor: `${color}15` }}
+          className="absolute inset-0 animate-marquee pointer-events-none opacity-60"
+          style={{ backgroundColor: `${color}25` }}
         />
       )}
       {/* Drag Handle */}

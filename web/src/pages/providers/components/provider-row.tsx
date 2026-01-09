@@ -28,10 +28,10 @@ function formatCost(microUsd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
-// 计算缓存利用率: (CacheRead + CacheWrite) / (Input + CacheRead + CacheWrite) × 100
+// 计算缓存利用率: (CacheRead + CacheWrite) / (Input + Output + CacheRead + CacheWrite) × 100
 function calcCacheRate(stats: ProviderStats): number {
   const cacheTotal = stats.totalCacheRead + stats.totalCacheWrite;
-  const total = stats.totalInputTokens + cacheTotal;
+  const total = stats.totalInputTokens + stats.totalOutputTokens + cacheTotal;
   if (total === 0) return 0;
   return (cacheTotal / total) * 100;
 }
@@ -62,13 +62,21 @@ export function ProviderRow({ provider, stats, streamingCount, onClick }: Provid
   return (
     <div
       onClick={onClick}
-      className="group relative flex items-center gap-4 p-4 rounded-xl border border-border bg-surface-primary hover:border-accent/30 hover:shadow-card-hover cursor-pointer transition-all duration-200 overflow-hidden"
+      className={`group relative flex items-center gap-4 p-4 rounded-xl border bg-surface-primary cursor-pointer transition-all duration-200 overflow-hidden ${
+        streamingCount > 0
+          ? ''
+          : 'border-border hover:border-accent/30 hover:shadow-card-hover'
+      }`}
+      style={{
+        borderColor: streamingCount > 0 ? `${color}80` : undefined,
+        boxShadow: streamingCount > 0 ? `0 0 15px ${color}20` : undefined,
+      }}
     >
       {/* Marquee 背景动画 (仅在有 streaming 请求时显示) */}
       {streamingCount > 0 && (
         <div
-          className="absolute inset-0 animate-marquee pointer-events-none opacity-20"
-          style={{ backgroundColor: `${color}15` }}
+          className="absolute inset-0 animate-marquee pointer-events-none opacity-40"
+          style={{ backgroundColor: `${color}20` }}
         />
       )}
 
