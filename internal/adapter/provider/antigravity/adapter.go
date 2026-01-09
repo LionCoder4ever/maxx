@@ -78,7 +78,8 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 			return domain.NewProxyErrorWithMessage(domain.ErrFormatConversion, true, "failed to transform request")
 		}
 	} else {
-		upstreamBody = requestBody
+		// For Gemini, unwrap CLI envelope if present
+		upstreamBody = unwrapGeminiCLIEnvelope(requestBody)
 	}
 
 	// Build upstream URL
@@ -437,6 +438,24 @@ func isStreamRequest(body []byte) bool {
 	}
 	stream, _ := req["stream"].(bool)
 	return stream
+}
+
+// unwrapGeminiCLIEnvelope extracts the inner request from Gemini CLI envelope format
+// Gemini CLI sends: {"request": {...}, "model": "..."}
+// Gemini API expects just the inner request content
+func unwrapGeminiCLIEnvelope(body []byte) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	if innerRequest, ok := data["request"]; ok {
+		if unwrapped, err := json.Marshal(innerRequest); err == nil {
+			return unwrapped
+		}
+	}
+
+	return body
 }
 
 func isRetryableStatusCode(code int) bool {
