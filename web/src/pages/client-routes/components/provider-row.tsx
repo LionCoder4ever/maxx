@@ -133,12 +133,16 @@ export function ProviderRowContent({
         ${
           enabled
             ? streamingCount > 0
-              ? 'bg-emerald-400/[0.08] border-emerald-400/60 shadow-[0_0_15px_rgba(52,211,153,0.15)]'
+              ? 'bg-surface-primary'
               : 'bg-emerald-400/[0.03] border-emerald-400/30 shadow-sm'
             : 'bg-surface-secondary/50 border-dashed border-border opacity-95'
         }
         ${isOverlay ? 'shadow-xl ring-2 ring-accent opacity-100' : ''}
       `}
+      style={{
+        borderColor: enabled && streamingCount > 0 ? `${color}80` : undefined,
+        boxShadow: enabled && streamingCount > 0 ? `0 0 15px ${color}20` : undefined,
+      }}
     >
       {/* Marquee 背景动画 (仅在有 streaming 请求时显示) */}
       {streamingCount > 0 && enabled && (
