@@ -21,6 +21,22 @@ import type { ProxyUpstreamAttempt, ClientType } from '@/lib/transport';
 import { cn } from '@/lib/utils';
 import { ClientIcon, getClientName, getClientColor } from '@/components/icons/client-icons';
 
+// 微美元转美元 (1 USD = 1,000,000 microUSD)
+const MICRO_USD_PER_USD = 1_000_000;
+function microToUSD(microUSD: number): number {
+  return microUSD / MICRO_USD_PER_USD;
+}
+
+function formatCost(microUSD: number): string {
+  if (microUSD === 0) return '-';
+  const usd = microToUSD(microUSD);
+  if (usd < 0.0001) return '<$0.0001';
+  if (usd < 0.001) return `$${usd.toFixed(5)}`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 export function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -193,7 +209,7 @@ export function RequestDetailPage() {
             <div className="text-center px-3">
               <div className="text-[10px] uppercase tracking-wider text-text-muted mb-0.5">Cost</div>
               <div className="text-sm font-mono font-medium text-blue-400">
-                {request.cost > 0 ? `$${request.cost.toFixed(4)}` : '-'}
+                {formatCost(request.cost)}
               </div>
             </div>
           </div>
@@ -290,7 +306,7 @@ export function RequestDetailPage() {
                         </h3>
                          <div className="flex items-center gap-3 text-xs text-text-secondary mt-0.5">
                            <span>Attempt #{selectedAttempt.id}</span>
-                           {selectedAttempt.cost > 0 && <span className="text-blue-400 font-medium">Cost: ${selectedAttempt.cost.toFixed(6)}</span>}
+                           {selectedAttempt.cost > 0 && <span className="text-blue-400 font-medium">Cost: {formatCost(selectedAttempt.cost)}</span>}
                          </div>
                       </div>
                     </div>
@@ -511,7 +527,7 @@ export function RequestDetailPage() {
                                        )}
                                        <div className="flex justify-between items-center">
                                           <dt className="text-xs font-medium text-text-secondary uppercase tracking-wider">Cost</dt>
-                                          <dd className="text-sm text-blue-400 font-mono font-medium">${selectedAttempt.cost.toFixed(6)}</dd>
+                                          <dd className="text-sm text-blue-400 font-mono font-medium">{formatCost(selectedAttempt.cost)}</dd>
                                        </div>
                                    </CardContent>
                                 </Card>

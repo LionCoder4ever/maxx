@@ -232,11 +232,19 @@ function TokenCell({ count, color }: { count: number; color: string }) {
   return <span className={`text-xs font-mono ${color}`}>{formatTokens(count)}</span>;
 }
 
-// Cost Cell Component
+// 微美元转美元 (1 USD = 1,000,000 microUSD)
+const MICRO_USD_PER_USD = 1_000_000;
+function microToUSD(microUSD: number): number {
+  return microUSD / MICRO_USD_PER_USD;
+}
+
+// Cost Cell Component (接收 microUSD)
 function CostCell({ cost }: { cost: number }) {
   if (cost === 0) {
     return <span className="text-caption text-text-muted font-mono">-</span>;
   }
+
+  const usd = microToUSD(cost);
 
   const formatCost = (c: number) => {
     if (c < 0.001) return '<$0.001';
@@ -251,7 +259,7 @@ function CostCell({ cost }: { cost: number }) {
     return 'text-text-primary';
   };
 
-  return <span className={`text-xs font-mono ${getCostColor(cost)}`}>{formatCost(cost)}</span>;
+  return <span className={`text-xs font-mono ${getCostColor(usd)}`}>{formatCost(usd)}</span>;
 }
 
 // Log Row Component
