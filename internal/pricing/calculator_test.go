@@ -1,108 +1,81 @@
 package pricing
 
 import (
-	"math"
 	"testing"
 
 	"github.com/Bowl42/maxx-next/internal/usage"
 )
 
-// almostEqual compares two float64 values with a tolerance
-func almostEqual(a, b, epsilon float64) bool {
-	return math.Abs(a-b) < epsilon
-}
+func TestCalculateTieredCostMicro(t *testing.T) {
+	// 测试: $3/M tokens, 阈值 200K, 超阈值倍率 2/1
+	basePriceMicro := uint64(3_000_000) // $3/M
 
-func TestCalculateTieredCost(t *testing.T) {
-	tests := []struct {
-		name      string
-		tokens    uint64
-		basePrice float64
-		premium   float64
-		threshold uint64
-		expected  float64
-	}{
-		{
-			name:      "below threshold",
-			tokens:    100000,
-			basePrice: 3.0,
-			premium:   2.0,
-			threshold: 200000,
-			expected:  0.3, // 100K × $3/M = $0.30
-		},
-		{
-			name:      "at threshold",
-			tokens:    200000,
-			basePrice: 3.0,
-			premium:   2.0,
-			threshold: 200000,
-			expected:  0.6, // 200K × $3/M = $0.60
-		},
-		{
-			name:      "above threshold",
-			tokens:    300000,
-			basePrice: 3.0,
-			premium:   2.0,
-			threshold: 200000,
-			expected:  1.2, // 200K × $3/M + 100K × $3/M × 2.0 = $0.60 + $0.60 = $1.20
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CalculateTieredCost(tt.tokens, tt.basePrice, tt.premium, tt.threshold)
-			if !almostEqual(got, tt.expected, 0.0001) {
-				t.Errorf("CalculateTieredCost() = %v, want %v", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestCalculateLinearCost(t *testing.T) {
 	tests := []struct {
 		name     string
 		tokens   uint64
-		price    float64
-		expected float64
+		expected uint64
 	}{
 		{
-			name:     "1M tokens",
-			tokens:   1000000,
-			price:    3.0,
-			expected: 3.0,
+			name:     "below threshold 100K",
+			tokens:   100_000,
+			expected: 300_000, // 100K × $3/M = $0.30 = 300,000 microUSD
 		},
 		{
-			name:     "100K tokens",
-			tokens:   100000,
-			price:    15.0,
-			expected: 1.5,
+			name:     "at threshold 200K",
+			tokens:   200_000,
+			expected: 600_000, // 200K × $3/M = $0.60 = 600,000 microUSD
+		},
+		{
+			name:     "above threshold 300K",
+			tokens:   300_000,
+			expected: 1_200_000, // 200K × $3/M + 100K × $3/M × 2 = $0.60 + $0.60 = 1,200,000 microUSD
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CalculateLinearCost(tt.tokens, tt.price)
+			got := CalculateTieredCostMicro(tt.tokens, basePriceMicro, 2, 1, 200_000)
 			if got != tt.expected {
-				t.Errorf("CalculateLinearCost() = %v, want %v", got, tt.expected)
+				t.Errorf("CalculateTieredCostMicro() = %d, want %d", got, tt.expected)
 			}
 		})
 	}
 }
 
-func TestToMicroUSD(t *testing.T) {
+func TestCalculateLinearCostMicro(t *testing.T) {
 	tests := []struct {
-		usd      float64
-		expected uint64
+		name       string
+		tokens     uint64
+		priceMicro uint64
+		expected   uint64
 	}{
-		{1.0, 1000000},
-		{0.001, 1000},
-		{0.000001, 1},
+		{
+			name:       "1M tokens at $3/M",
+			tokens:     1_000_000,
+			priceMicro: 3_000_000,
+			expected:   3_000_000, // $3
+		},
+		{
+			name:       "100K tokens at $15/M",
+			tokens:     100_000,
+			priceMicro: 15_000_000,
+			expected:   1_500_000, // $1.50
+		},
+		{
+			name:       "50K tokens at $0.30/M (cache read)",
+			tokens:     50_000,
+			priceMicro: 300_000, // $0.30/M = $3/M × 0.1
+			expected:   15_000,  // $0.015
+		},
 	}
 
 	for _, tt := range tests {
-		got := ToMicroUSD(tt.usd)
-		if got != tt.expected {
-			t.Errorf("ToMicroUSD(%v) = %v, want %v", tt.usd, got, tt.expected)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := CalculateLinearCostMicro(tt.tokens, tt.priceMicro)
+			if got != tt.expected {
+				t.Errorf("CalculateLinearCostMicro() = %d, want %d", got, tt.expected)
+			}
+		})
 	}
 }
 
@@ -119,8 +92,8 @@ func TestCalculator_Calculate(t *testing.T) {
 			name:  "claude-sonnet-4 basic",
 			model: "claude-sonnet-4-20250514",
 			metrics: &usage.Metrics{
-				InputTokens:  100000,
-				OutputTokens: 10000,
+				InputTokens:  100_000,
+				OutputTokens: 10_000,
 			},
 			wantZero: false,
 		},
@@ -128,8 +101,8 @@ func TestCalculator_Calculate(t *testing.T) {
 			name:  "gpt-4o basic",
 			model: "gpt-4o-2024-05-13",
 			metrics: &usage.Metrics{
-				InputTokens:  50000,
-				OutputTokens: 5000,
+				InputTokens:  50_000,
+				OutputTokens: 5_000,
 			},
 			wantZero: false,
 		},
@@ -137,15 +110,15 @@ func TestCalculator_Calculate(t *testing.T) {
 			name:  "unknown model",
 			model: "unknown-model-xyz",
 			metrics: &usage.Metrics{
-				InputTokens:  100000,
-				OutputTokens: 10000,
+				InputTokens:  100_000,
+				OutputTokens: 10_000,
 			},
 			wantZero: true,
 		},
 		{
-			name:    "nil metrics",
-			model:   "claude-sonnet-4",
-			metrics: nil,
+			name:     "nil metrics",
+			model:    "claude-sonnet-4",
+			metrics:  nil,
 			wantZero: true,
 		},
 	}
@@ -154,7 +127,7 @@ func TestCalculator_Calculate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := calc.Calculate(tt.model, tt.metrics)
 			if tt.wantZero && got != 0 {
-				t.Errorf("Calculate() = %v, want 0", got)
+				t.Errorf("Calculate() = %d, want 0", got)
 			}
 			if !tt.wantZero && got == 0 {
 				t.Errorf("Calculate() = 0, want non-zero")
@@ -167,27 +140,43 @@ func TestCalculator_Calculate_WithCache(t *testing.T) {
 	calc := GlobalCalculator()
 
 	// Claude Sonnet 4: input=$3/M, output=$15/M
-	// Cache read: $3 × 0.1 = $0.30/M
-	// Cache 5m write: $3 × 1.25 = $3.75/M
-	// Cache 1h write: $3 × 2.0 = $6/M
+	// Cache read: $3/M / 10 = $0.30/M
+	// Cache 5m write: $3/M * 5/4 = $3.75/M
+	// Cache 1h write: $3/M * 2 = $6/M
 	metrics := &usage.Metrics{
-		InputTokens:          100000,  // $0.30
-		OutputTokens:         10000,   // $0.15
-		CacheReadCount:       50000,   // $0.015
-		Cache5mCreationCount: 20000,   // $0.075
-		Cache1hCreationCount: 10000,   // $0.06
+		InputTokens:          100_000, // 100K × $3/M = $0.30 = 300,000 microUSD
+		OutputTokens:         10_000,  // 10K × $15/M = $0.15 = 150,000 microUSD
+		CacheReadCount:       50_000,  // 50K × $0.30/M = $0.015 = 15,000 microUSD
+		Cache5mCreationCount: 20_000,  // 20K × $3.75/M = $0.075 = 75,000 microUSD
+		Cache1hCreationCount: 10_000,  // 10K × $6/M = $0.06 = 60,000 microUSD
 	}
 
 	cost := calc.Calculate("claude-sonnet-4", metrics)
 	if cost == 0 {
-		t.Error("Calculate() = 0, want non-zero")
+		t.Fatal("Calculate() = 0, want non-zero")
 	}
 
-	// Expected: $0.30 + $0.15 + $0.015 + $0.075 + $0.06 = $0.60
-	// In microUSD: 600000
-	expectedMicroUSD := uint64(600000)
+	// Expected: 300,000 + 150,000 + 15,000 + 75,000 + 60,000 = 600,000 microUSD
+	expectedMicroUSD := uint64(600_000)
 	if cost != expectedMicroUSD {
-		t.Errorf("Calculate() = %v microUSD, want %v microUSD", cost, expectedMicroUSD)
+		t.Errorf("Calculate() = %d microUSD, want %d microUSD", cost, expectedMicroUSD)
+	}
+}
+
+func TestCalculator_Calculate_1MContext(t *testing.T) {
+	calc := GlobalCalculator()
+
+	// Claude Sonnet 4 with 1M context: 超过 200K 时 input×2, output×1.5
+	// input: $3/M, output: $15/M
+	metrics := &usage.Metrics{
+		InputTokens:  300_000, // 200K×$3 + 100K×$3×2 = $0.6 + $0.6 = $1.2 = 1,200,000 microUSD
+		OutputTokens: 50_000,  // 全部低于 200K: 50K×$15/M = $0.75 = 750,000 microUSD
+	}
+
+	cost := calc.Calculate("claude-sonnet-4", metrics)
+	expectedMicroUSD := uint64(1_200_000 + 750_000)
+	if cost != expectedMicroUSD {
+		t.Errorf("Calculate() = %d microUSD, want %d microUSD", cost, expectedMicroUSD)
 	}
 }
 
@@ -199,10 +188,10 @@ func TestPriceTable_Get_PrefixMatch(t *testing.T) {
 		wantFound bool
 	}{
 		{"claude-sonnet-4", true},
-		{"claude-sonnet-4-20250514", true},           // prefix match
-		{"claude-sonnet-4-5-20250514", true},         // prefix match
+		{"claude-sonnet-4-20250514", true},   // prefix match
+		{"claude-sonnet-4-5-20250514", true}, // prefix match
 		{"gpt-4o", true},
-		{"gpt-4o-2024-05-13", true},                  // prefix match
+		{"gpt-4o-2024-05-13", true}, // prefix match
 		{"unknown-model", false},
 	}
 
@@ -216,5 +205,28 @@ func TestPriceTable_Get_PrefixMatch(t *testing.T) {
 				t.Errorf("Get(%s) = %v, want nil", tt.modelID, pricing)
 			}
 		})
+	}
+}
+
+func TestCacheDefaultPrices(t *testing.T) {
+	// 验证缓存价格的默认计算
+	pricing := &ModelPricing{
+		InputPriceMicro:  3_000_000, // $3/M
+		OutputPriceMicro: 15_000_000,
+	}
+
+	// cache read: input / 10 = $0.30/M = 300,000 microUSD/M
+	if got := pricing.GetEffectiveCacheReadPriceMicro(); got != 300_000 {
+		t.Errorf("GetEffectiveCacheReadPriceMicro() = %d, want 300000", got)
+	}
+
+	// cache 5m write: input * 5/4 = $3.75/M = 3,750,000 microUSD/M
+	if got := pricing.GetEffectiveCache5mWritePriceMicro(); got != 3_750_000 {
+		t.Errorf("GetEffectiveCache5mWritePriceMicro() = %d, want 3750000", got)
+	}
+
+	// cache 1h write: input * 2 = $6/M = 6,000,000 microUSD/M
+	if got := pricing.GetEffectiveCache1hWritePriceMicro(); got != 6_000_000 {
+		t.Errorf("GetEffectiveCache1hWritePriceMicro() = %d, want 6000000", got)
 	}
 }

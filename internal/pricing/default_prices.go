@@ -15,132 +15,143 @@ func DefaultPriceTable() *PriceTable {
 	return defaultTable
 }
 
+// 价格常量 (microUSD/M tokens)
+// $1/M = 1,000,000 microUSD/M
+const (
+	usd1   = 1_000_000   // $1/M
+	usd3   = 3_000_000   // $3/M
+	usd15  = 15_000_000  // $15/M
+	usd75  = 75_000_000  // $75/M
+	usd150 = 150_000_000 // $150/M
+	usd600 = 600_000_000 // $600/M
+)
+
 // initDefaultPrices 初始化默认价格
 func initDefaultPrices() *PriceTable {
 	pt := NewPriceTable("2025.01")
 
 	// Claude 4 系列
 	pt.Set(&ModelPricing{
-		ModelID:      "claude-sonnet-4-5",
-		InputPrice:   3.0,
-		OutputPrice:  15.0,
-		Has1MContext: true,
+		ModelID:          "claude-sonnet-4-5",
+		InputPriceMicro:  usd3,
+		OutputPriceMicro: usd15,
+		Has1MContext:     true,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:      "claude-sonnet-4",
-		InputPrice:   3.0,
-		OutputPrice:  15.0,
-		Has1MContext: true,
+		ModelID:          "claude-sonnet-4",
+		InputPriceMicro:  usd3,
+		OutputPriceMicro: usd15,
+		Has1MContext:     true,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-opus-4",
-		InputPrice:  15.0,
-		OutputPrice: 75.0,
+		ModelID:          "claude-opus-4",
+		InputPriceMicro:  usd15,
+		OutputPriceMicro: usd75,
 	})
 
 	// Claude 3.5 系列
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-3-5-sonnet",
-		InputPrice:  3.0,
-		OutputPrice: 15.0,
+		ModelID:          "claude-3-5-sonnet",
+		InputPriceMicro:  usd3,
+		OutputPriceMicro: usd15,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-3-5-haiku",
-		InputPrice:  0.80,
-		OutputPrice: 4.0,
+		ModelID:          "claude-3-5-haiku",
+		InputPriceMicro:  800_000,  // $0.80/M
+		OutputPriceMicro: 4_000_000, // $4/M
 	})
 
 	// Claude 3 系列
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-3-opus",
-		InputPrice:  15.0,
-		OutputPrice: 75.0,
+		ModelID:          "claude-3-opus",
+		InputPriceMicro:  usd15,
+		OutputPriceMicro: usd75,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-3-sonnet",
-		InputPrice:  3.0,
-		OutputPrice: 15.0,
+		ModelID:          "claude-3-sonnet",
+		InputPriceMicro:  usd3,
+		OutputPriceMicro: usd15,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "claude-3-haiku",
-		InputPrice:  0.25,
-		OutputPrice: 1.25,
+		ModelID:          "claude-3-haiku",
+		InputPriceMicro:  250_000,   // $0.25/M
+		OutputPriceMicro: 1_250_000, // $1.25/M
 	})
 
 	// Gemini 系列
 	pt.Set(&ModelPricing{
-		ModelID:     "gemini-2.5-pro",
-		InputPrice:  1.25,
-		OutputPrice: 10.0,
+		ModelID:          "gemini-2.5-pro",
+		InputPriceMicro:  1_250_000,  // $1.25/M
+		OutputPriceMicro: 10_000_000, // $10/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gemini-2.5-flash",
-		InputPrice:  0.15,
-		OutputPrice: 0.60,
+		ModelID:          "gemini-2.5-flash",
+		InputPriceMicro:  150_000, // $0.15/M
+		OutputPriceMicro: 600_000, // $0.60/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gemini-2.0-flash",
-		InputPrice:  0.10,
-		OutputPrice: 0.40,
+		ModelID:          "gemini-2.0-flash",
+		InputPriceMicro:  100_000, // $0.10/M
+		OutputPriceMicro: 400_000, // $0.40/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gemini-1.5-pro",
-		InputPrice:  1.25,
-		OutputPrice: 5.0,
+		ModelID:          "gemini-1.5-pro",
+		InputPriceMicro:  1_250_000, // $1.25/M
+		OutputPriceMicro: 5_000_000, // $5/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gemini-1.5-flash",
-		InputPrice:  0.075,
-		OutputPrice: 0.30,
+		ModelID:          "gemini-1.5-flash",
+		InputPriceMicro:  75_000,  // $0.075/M
+		OutputPriceMicro: 300_000, // $0.30/M
 	})
 
 	// OpenAI GPT 系列
 	pt.Set(&ModelPricing{
-		ModelID:     "gpt-4o",
-		InputPrice:  2.50,
-		OutputPrice: 10.0,
+		ModelID:          "gpt-4o",
+		InputPriceMicro:  2_500_000,  // $2.50/M
+		OutputPriceMicro: 10_000_000, // $10/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gpt-4o-mini",
-		InputPrice:  0.15,
-		OutputPrice: 0.60,
+		ModelID:          "gpt-4o-mini",
+		InputPriceMicro:  150_000, // $0.15/M
+		OutputPriceMicro: 600_000, // $0.60/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gpt-4-turbo",
-		InputPrice:  10.0,
-		OutputPrice: 30.0,
+		ModelID:          "gpt-4-turbo",
+		InputPriceMicro:  10_000_000, // $10/M
+		OutputPriceMicro: 30_000_000, // $30/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gpt-4",
-		InputPrice:  30.0,
-		OutputPrice: 60.0,
+		ModelID:          "gpt-4",
+		InputPriceMicro:  30_000_000, // $30/M
+		OutputPriceMicro: 60_000_000, // $60/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "gpt-3.5-turbo",
-		InputPrice:  0.50,
-		OutputPrice: 1.50,
+		ModelID:          "gpt-3.5-turbo",
+		InputPriceMicro:  500_000,   // $0.50/M
+		OutputPriceMicro: 1_500_000, // $1.50/M
 	})
 
 	// OpenAI o 系列
 	pt.Set(&ModelPricing{
-		ModelID:     "o1",
-		InputPrice:  15.0,
-		OutputPrice: 60.0,
+		ModelID:          "o1",
+		InputPriceMicro:  usd15,
+		OutputPriceMicro: 60_000_000, // $60/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "o1-mini",
-		InputPrice:  3.0,
-		OutputPrice: 12.0,
+		ModelID:          "o1-mini",
+		InputPriceMicro:  usd3,
+		OutputPriceMicro: 12_000_000, // $12/M
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "o1-pro",
-		InputPrice:  150.0,
-		OutputPrice: 600.0,
+		ModelID:          "o1-pro",
+		InputPriceMicro:  usd150,
+		OutputPriceMicro: usd600,
 	})
 	pt.Set(&ModelPricing{
-		ModelID:     "o3-mini",
-		InputPrice:  1.10,
-		OutputPrice: 4.40,
+		ModelID:          "o3-mini",
+		InputPriceMicro:  1_100_000, // $1.10/M
+		OutputPriceMicro: 4_400_000, // $4.40/M
 	})
 
 	return pt

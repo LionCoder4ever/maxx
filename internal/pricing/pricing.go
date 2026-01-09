@@ -4,20 +4,29 @@ package pricing
 import "strings"
 
 // ModelPricing 单个模型的价格配置
-// 价格单位：美元/百万tokens ($/M tokens)
+// 价格单位：微美元/百万tokens (microUSD/M tokens)
+// 例如 $3/M tokens = 3,000,000 microUSD/M tokens
 type ModelPricing struct {
-	ModelID           string  `json:"modelId"`
-	InputPrice        float64 `json:"inputPrice"`        // 输入价格 $/M
-	OutputPrice       float64 `json:"outputPrice"`       // 输出价格 $/M
-	CacheReadPrice    float64 `json:"cacheReadPrice"`    // 缓存读取（默认 input × 0.1）
-	Cache5mWritePrice float64 `json:"cache5mWritePrice"` // 5分钟缓存（默认 input × 1.25）
-	Cache1hWritePrice float64 `json:"cache1hWritePrice"` // 1小时缓存（默认 input × 2.0）
+	ModelID string `json:"modelId"`
+
+	// 基础价格 (microUSD/M tokens)
+	InputPriceMicro  uint64 `json:"inputPriceMicro"`  // 输入价格
+	OutputPriceMicro uint64 `json:"outputPriceMicro"` // 输出价格
+
+	// 缓存价格 (microUSD/M tokens)，0 表示使用默认值
+	CacheReadPriceMicro    uint64 `json:"cacheReadPriceMicro,omitempty"`    // 缓存读取（默认 input / 10）
+	Cache5mWritePriceMicro uint64 `json:"cache5mWritePriceMicro,omitempty"` // 5分钟缓存（默认 input * 5/4）
+	Cache1hWritePriceMicro uint64 `json:"cache1hWritePriceMicro,omitempty"` // 1小时缓存（默认 input * 2）
 
 	// 1M Context Window 分层定价 (Claude Sonnet 4/4.5)
-	Has1MContext       bool    `json:"has1mContext"`       // 是否支持 1M context
-	Context1MThreshold uint64  `json:"context1mThreshold"` // 阈值（默认 200,000）
-	InputPremium       float64 `json:"inputPremium"`       // 超阈值 input 倍率（默认 2.0）
-	OutputPremium      float64 `json:"outputPremium"`      // 超阈值 output 倍率（默认 1.5）
+	Has1MContext       bool   `json:"has1mContext"`                 // 是否支持 1M context
+	Context1MThreshold uint64 `json:"context1mThreshold,omitempty"` // 阈值（默认 200,000）
+	// 倍率使用分数表示：premiumNum/premiumDenom
+	// 例如 2.0 = 2/1, 1.5 = 3/2
+	InputPremiumNum    uint64 `json:"inputPremiumNum,omitempty"`    // 超阈值 input 倍率分子（默认 2）
+	InputPremiumDenom  uint64 `json:"inputPremiumDenom,omitempty"`  // 超阈值 input 倍率分母（默认 1）
+	OutputPremiumNum   uint64 `json:"outputPremiumNum,omitempty"`   // 超阈值 output 倍率分子（默认 3）
+	OutputPremiumDenom uint64 `json:"outputPremiumDenom,omitempty"` // 超阈值 output 倍率分母（默认 2）
 }
 
 // PriceTable 完整价格表
@@ -61,31 +70,31 @@ func (pt *PriceTable) Set(pricing *ModelPricing) {
 	pt.Models[pricing.ModelID] = pricing
 }
 
-// GetEffectiveCacheReadPrice 获取有效的缓存读取价格
-// 如果未设置，返回 inputPrice × 0.1
-func (p *ModelPricing) GetEffectiveCacheReadPrice() float64 {
-	if p.CacheReadPrice > 0 {
-		return p.CacheReadPrice
+// GetEffectiveCacheReadPriceMicro 获取有效的缓存读取价格 (microUSD/M tokens)
+// 如果未设置，返回 inputPriceMicro / 10
+func (p *ModelPricing) GetEffectiveCacheReadPriceMicro() uint64 {
+	if p.CacheReadPriceMicro > 0 {
+		return p.CacheReadPriceMicro
 	}
-	return p.InputPrice * 0.1
+	return p.InputPriceMicro / 10
 }
 
-// GetEffectiveCache5mWritePrice 获取有效的5分钟缓存写入价格
-// 如果未设置，返回 inputPrice × 1.25
-func (p *ModelPricing) GetEffectiveCache5mWritePrice() float64 {
-	if p.Cache5mWritePrice > 0 {
-		return p.Cache5mWritePrice
+// GetEffectiveCache5mWritePriceMicro 获取有效的5分钟缓存写入价格 (microUSD/M tokens)
+// 如果未设置，返回 inputPriceMicro * 5/4
+func (p *ModelPricing) GetEffectiveCache5mWritePriceMicro() uint64 {
+	if p.Cache5mWritePriceMicro > 0 {
+		return p.Cache5mWritePriceMicro
 	}
-	return p.InputPrice * 1.25
+	return p.InputPriceMicro * 5 / 4
 }
 
-// GetEffectiveCache1hWritePrice 获取有效的1小时缓存写入价格
-// 如果未设置，返回 inputPrice × 2.0
-func (p *ModelPricing) GetEffectiveCache1hWritePrice() float64 {
-	if p.Cache1hWritePrice > 0 {
-		return p.Cache1hWritePrice
+// GetEffectiveCache1hWritePriceMicro 获取有效的1小时缓存写入价格 (microUSD/M tokens)
+// 如果未设置，返回 inputPriceMicro * 2
+func (p *ModelPricing) GetEffectiveCache1hWritePriceMicro() uint64 {
+	if p.Cache1hWritePriceMicro > 0 {
+		return p.Cache1hWritePriceMicro
 	}
-	return p.InputPrice * 2.0
+	return p.InputPriceMicro * 2
 }
 
 // GetContext1MThreshold 获取1M上下文阈值
@@ -97,20 +106,28 @@ func (p *ModelPricing) GetContext1MThreshold() uint64 {
 	return 200000
 }
 
-// GetInputPremium 获取超阈值input倍率
-// 如果未设置，返回默认值 2.0
-func (p *ModelPricing) GetInputPremium() float64 {
-	if p.InputPremium > 0 {
-		return p.InputPremium
+// GetInputPremiumFraction 获取超阈值input倍率（分数）
+// 默认 2/1 = 2.0
+func (p *ModelPricing) GetInputPremiumFraction() (num, denom uint64) {
+	num, denom = p.InputPremiumNum, p.InputPremiumDenom
+	if num == 0 {
+		num = 2
 	}
-	return 2.0
+	if denom == 0 {
+		denom = 1
+	}
+	return
 }
 
-// GetOutputPremium 获取超阈值output倍率
-// 如果未设置，返回默认值 1.5
-func (p *ModelPricing) GetOutputPremium() float64 {
-	if p.OutputPremium > 0 {
-		return p.OutputPremium
+// GetOutputPremiumFraction 获取超阈值output倍率（分数）
+// 默认 3/2 = 1.5
+func (p *ModelPricing) GetOutputPremiumFraction() (num, denom uint64) {
+	num, denom = p.OutputPremiumNum, p.OutputPremiumDenom
+	if num == 0 {
+		num = 3
 	}
-	return 1.5
+	if denom == 0 {
+		denom = 2
+	}
+	return
 }

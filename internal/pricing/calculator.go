@@ -34,7 +34,7 @@ func NewCalculator(pt *PriceTable) *Calculator {
 	}
 }
 
-// Calculate 计算成本，返回微美元 (1 USD = 1,000,000)
+// Calculate 计算成本，返回微美元 (1 USD = 1,000,000 microUSD)
 // model: 模型名称
 // metrics: token使用指标
 // 如果模型未找到，返回0并记录警告日志
@@ -55,67 +55,69 @@ func (c *Calculator) Calculate(model string, metrics *usage.Metrics) uint64 {
 	return c.CalculateWithPricing(pricing, metrics)
 }
 
-// CalculateWithPricing 使用指定价格计算成本
+// CalculateWithPricing 使用指定价格计算成本（纯整数运算）
 func (c *Calculator) CalculateWithPricing(pricing *ModelPricing, metrics *usage.Metrics) uint64 {
 	if pricing == nil || metrics == nil {
 		return 0
 	}
 
-	var totalCost float64
+	var totalCost uint64
 
 	// 1. 输入成本
 	if metrics.InputTokens > 0 {
 		if pricing.Has1MContext {
-			totalCost += CalculateTieredCost(
+			inputNum, inputDenom := pricing.GetInputPremiumFraction()
+			totalCost += CalculateTieredCostMicro(
 				metrics.InputTokens,
-				pricing.InputPrice,
-				pricing.GetInputPremium(),
+				pricing.InputPriceMicro,
+				inputNum, inputDenom,
 				pricing.GetContext1MThreshold(),
 			)
 		} else {
-			totalCost += CalculateLinearCost(metrics.InputTokens, pricing.InputPrice)
+			totalCost += CalculateLinearCostMicro(metrics.InputTokens, pricing.InputPriceMicro)
 		}
 	}
 
 	// 2. 输出成本
 	if metrics.OutputTokens > 0 {
 		if pricing.Has1MContext {
-			totalCost += CalculateTieredCost(
+			outputNum, outputDenom := pricing.GetOutputPremiumFraction()
+			totalCost += CalculateTieredCostMicro(
 				metrics.OutputTokens,
-				pricing.OutputPrice,
-				pricing.GetOutputPremium(),
+				pricing.OutputPriceMicro,
+				outputNum, outputDenom,
 				pricing.GetContext1MThreshold(),
 			)
 		} else {
-			totalCost += CalculateLinearCost(metrics.OutputTokens, pricing.OutputPrice)
+			totalCost += CalculateLinearCostMicro(metrics.OutputTokens, pricing.OutputPriceMicro)
 		}
 	}
 
-	// 3. 缓存读取成本（线性定价）
+	// 3. 缓存读取成本（使用 input 价格的 10%）
 	if metrics.CacheReadCount > 0 {
-		totalCost += CalculateLinearCost(
+		totalCost += CalculateLinearCostMicro(
 			metrics.CacheReadCount,
-			pricing.GetEffectiveCacheReadPrice(),
+			pricing.GetEffectiveCacheReadPriceMicro(),
 		)
 	}
 
-	// 4. 5分钟缓存写入成本（线性定价）
+	// 4. 5分钟缓存写入成本（使用 input 价格的 125%）
 	if metrics.Cache5mCreationCount > 0 {
-		totalCost += CalculateLinearCost(
+		totalCost += CalculateLinearCostMicro(
 			metrics.Cache5mCreationCount,
-			pricing.GetEffectiveCache5mWritePrice(),
+			pricing.GetEffectiveCache5mWritePriceMicro(),
 		)
 	}
 
-	// 5. 1小时缓存写入成本（线性定价）
+	// 5. 1小时缓存写入成本（使用 input 价格的 200%）
 	if metrics.Cache1hCreationCount > 0 {
-		totalCost += CalculateLinearCost(
+		totalCost += CalculateLinearCostMicro(
 			metrics.Cache1hCreationCount,
-			pricing.GetEffectiveCache1hWritePrice(),
+			pricing.GetEffectiveCache1hWritePriceMicro(),
 		)
 	}
 
-	return ToMicroUSD(totalCost)
+	return totalCost
 }
 
 // SetPriceTable 更新价格表

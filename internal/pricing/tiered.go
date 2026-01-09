@@ -1,35 +1,40 @@
 package pricing
 
-// CalculateTieredCost 计算分层定价成本
+// 价格单位常量
+const (
+	// MicroUSDPerUSD 1美元 = 1,000,000 微美元
+	MicroUSDPerUSD = 1_000_000
+	// TokensPerMillion 百万tokens
+	TokensPerMillion = 1_000_000
+)
+
+// CalculateTieredCostMicro 计算分层定价成本（整数运算）
 // tokens: token数量
-// basePrice: 基础价格 ($/M tokens)
-// premium: 超阈值倍率
+// basePriceMicro: 基础价格 (microUSD/M tokens)
+// premiumNum, premiumDenom: 超阈值倍率（分数表示，如 2.0 = 2/1, 1.5 = 3/2）
 // threshold: 阈值 token 数
-// 返回: 美元成本
-func CalculateTieredCost(tokens uint64, basePrice, premium float64, threshold uint64) float64 {
+// 返回: 微美元成本
+func CalculateTieredCostMicro(tokens uint64, basePriceMicro uint64, premiumNum, premiumDenom, threshold uint64) uint64 {
 	if tokens <= threshold {
-		return float64(tokens) / 1_000_000 * basePrice
+		return tokens * basePriceMicro / TokensPerMillion
 	}
-	baseCost := float64(threshold) / 1_000_000 * basePrice
-	premiumCost := float64(tokens-threshold) / 1_000_000 * basePrice * premium
+	baseCost := threshold * basePriceMicro / TokensPerMillion
+	premiumTokens := tokens - threshold
+	// premiumCost = premiumTokens * basePriceMicro * (premiumNum/premiumDenom) / TokensPerMillion
+	// 重排以避免溢出: (premiumTokens * basePriceMicro / TokensPerMillion) * premiumNum / premiumDenom
+	premiumCost := premiumTokens * basePriceMicro / TokensPerMillion * premiumNum / premiumDenom
 	return baseCost + premiumCost
 }
 
-// CalculateLinearCost 计算线性定价成本
+// CalculateLinearCostMicro 计算线性定价成本（整数运算）
 // tokens: token数量
-// price: 价格 ($/M tokens)
-// 返回: 美元成本
-func CalculateLinearCost(tokens uint64, price float64) float64 {
-	return float64(tokens) / 1_000_000 * price
+// priceMicro: 价格 (microUSD/M tokens)
+// 返回: 微美元成本
+func CalculateLinearCostMicro(tokens, priceMicro uint64) uint64 {
+	return tokens * priceMicro / TokensPerMillion
 }
 
-// ToMicroUSD 将美元转换为微美元
-// 1 USD = 1,000,000 microUSD
-func ToMicroUSD(usd float64) uint64 {
-	return uint64(usd * 1_000_000)
-}
-
-// FromMicroUSD 将微美元转换为美元
-func FromMicroUSD(microUSD uint64) float64 {
-	return float64(microUSD) / 1_000_000
+// MicroToUSD 将微美元转换为美元（用于显示）
+func MicroToUSD(microUSD uint64) float64 {
+	return float64(microUSD) / MicroUSDPerUSD
 }
