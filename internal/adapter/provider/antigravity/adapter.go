@@ -49,7 +49,8 @@ func NewAdapter(p *domain.Provider) (provider.ProviderAdapter, error) {
 }
 
 func (a *AntigravityAdapter) SupportedClientTypes() []domain.ClientType {
-	return []domain.ClientType{domain.ClientTypeGemini}
+	// Antigravity natively supports Claude, OpenAI, and Gemini by converting to Gemini/v1internal API
+	return []domain.ClientType{domain.ClientTypeClaude, domain.ClientTypeOpenAI, domain.ClientTypeGemini}
 }
 
 func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter, req *http.Request, provider *domain.Provider) error {
@@ -71,20 +72,26 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 	needsConversion := clientType != targetType
 
 	// Transform request if needed
-	var upstreamBody []byte
+	var geminiBody []byte
 	if needsConversion {
-		upstreamBody, err = a.converter.TransformRequest(clientType, targetType, requestBody, mappedModel, stream)
+		geminiBody, err = a.converter.TransformRequest(clientType, targetType, requestBody, mappedModel, stream)
 		if err != nil {
 			return domain.NewProxyErrorWithMessage(domain.ErrFormatConversion, true, "failed to transform request")
 		}
 	} else {
 		// For Gemini, unwrap CLI envelope if present
-		upstreamBody = unwrapGeminiCLIEnvelope(requestBody)
+		geminiBody = unwrapGeminiCLIEnvelope(requestBody)
 	}
 
-	// Build upstream URL
+	// Wrap request in v1internal format
 	config := provider.Config.Antigravity
-	upstreamURL := a.buildUpstreamURL(config, mappedModel, stream)
+	upstreamBody, err := wrapV1InternalRequest(geminiBody, config.ProjectID, mappedModel)
+	if err != nil {
+		return domain.NewProxyErrorWithMessage(domain.ErrFormatConversion, true, "failed to wrap request for v1internal")
+	}
+
+	// Build upstream URL (v1internal endpoint)
+	upstreamURL := a.buildUpstreamURL(stream)
 
 	// Create upstream request
 	upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(upstreamBody))
@@ -92,18 +99,11 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 		return domain.NewProxyErrorWithMessage(domain.ErrUpstreamError, true, "failed to create upstream request")
 	}
 
-	// Forward original headers (filtered) - preserves application headers
-	originalHeaders := ctxutil.GetRequestHeaders(ctx)
-	copyHeadersFiltered(upstreamReq.Header, originalHeaders)
-
-	// Set content-type if not already set
-	if upstreamReq.Header.Get("Content-Type") == "" {
-		upstreamReq.Header.Set("Content-Type", "application/json")
-	}
-	// Disable compression to avoid gzip decode issues
-	upstreamReq.Header.Set("Accept-Encoding", "identity")
-	// Override auth with provider's token
+	// Set only the required headers (like Antigravity-Manager)
+	// DO NOT copy any client headers - they may contain API keys or other sensitive data
+	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+	upstreamReq.Header.Set("User-Agent", AntigravityUserAgent)
 
 	// Capture request info for attempt record
 	if attempt := ctxutil.GetUpstreamAttempt(ctx); attempt != nil {
@@ -136,14 +136,11 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 			return domain.NewProxyErrorWithMessage(err, true, "failed to refresh access token")
 		}
 
-		// Retry request with same headers
+		// Retry request with only required headers
 		upstreamReq, _ = http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(upstreamBody))
-		copyHeadersFiltered(upstreamReq.Header, originalHeaders)
-		if upstreamReq.Header.Get("Content-Type") == "" {
-			upstreamReq.Header.Set("Content-Type", "application/json")
-		}
-		upstreamReq.Header.Set("Accept-Encoding", "identity")
+		upstreamReq.Header.Set("Content-Type", "application/json")
 		upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+		upstreamReq.Header.Set("User-Agent", AntigravityUserAgent)
 		resp, err = client.Do(upstreamReq)
 		if err != nil {
 			return domain.NewProxyErrorWithMessage(domain.ErrUpstreamError, true, "failed to connect to upstream after token refresh")
@@ -208,8 +205,8 @@ func refreshGoogleToken(ctx context.Context, refreshToken string) (string, int, 
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
-	data.Set("client_id", "77185425430.apps.googleusercontent.com")
-	data.Set("client_secret", "OTJgUOQcT7lO7GsGZq2G4IlT")
+	data.Set("client_id", OAuthClientID)
+	data.Set("client_secret", OAuthClientSecret)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://oauth2.googleapis.com/token", strings.NewReader(data.Encode()))
 	if err != nil {
@@ -240,17 +237,16 @@ func refreshGoogleToken(ctx context.Context, refreshToken string) (string, int, 
 	return result.AccessToken, result.ExpiresIn, nil
 }
 
-func (a *AntigravityAdapter) buildUpstreamURL(config *domain.ProviderConfigAntigravity, model string, stream bool) string {
-	baseURL := config.Endpoint
-	if baseURL == "" {
-		baseURL = fmt.Sprintf("https://us-central1-aiplatform.googleapis.com/v1/projects/%s/locations/us-central1", config.ProjectID)
-	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
+// v1internal endpoint (same as Antigravity-Manager)
+const (
+	V1InternalBaseURL = "https://cloudcode-pa.googleapis.com/v1internal"
+)
 
+func (a *AntigravityAdapter) buildUpstreamURL(stream bool) string {
 	if stream {
-		return fmt.Sprintf("%s/publishers/google/models/%s:streamGenerateContent?alt=sse", baseURL, model)
+		return fmt.Sprintf("%s:streamGenerateContent?alt=sse", V1InternalBaseURL)
 	}
-	return fmt.Sprintf("%s/publishers/google/models/%s:generateContent", baseURL, model)
+	return fmt.Sprintf("%s:generateContent", V1InternalBaseURL)
 }
 
 func (a *AntigravityAdapter) handleNonStreamResponse(ctx context.Context, w http.ResponseWriter, resp *http.Response, clientType, targetType domain.ClientType, needsConversion bool) error {
@@ -259,16 +255,19 @@ func (a *AntigravityAdapter) handleNonStreamResponse(ctx context.Context, w http
 		return domain.NewProxyErrorWithMessage(domain.ErrUpstreamError, true, "failed to read upstream response")
 	}
 
+	// Unwrap v1internal response wrapper (extract "response" field)
+	unwrappedBody := unwrapV1InternalResponse(body)
+
 	// Capture response info and extract token usage
 	if attempt := ctxutil.GetUpstreamAttempt(ctx); attempt != nil {
 		attempt.ResponseInfo = &domain.ResponseInfo{
 			Status:  resp.StatusCode,
 			Headers: flattenHeaders(resp.Header),
-			Body:    string(body),
+			Body:    string(body), // Keep original for debugging
 		}
 
-		// Extract token usage from response
-		if metrics := usage.ExtractFromResponse(string(body)); metrics != nil {
+		// Extract token usage from unwrapped response
+		if metrics := usage.ExtractFromResponse(string(unwrappedBody)); metrics != nil {
 			attempt.InputTokenCount = metrics.InputTokens
 			attempt.OutputTokenCount = metrics.OutputTokens
 			attempt.CacheReadCount = metrics.CacheReadCount
@@ -285,12 +284,12 @@ func (a *AntigravityAdapter) handleNonStreamResponse(ctx context.Context, w http
 
 	var responseBody []byte
 	if needsConversion {
-		responseBody, err = a.converter.TransformResponse(targetType, clientType, body)
+		responseBody, err = a.converter.TransformResponse(targetType, clientType, unwrappedBody)
 		if err != nil {
 			return domain.NewProxyErrorWithMessage(domain.ErrFormatConversion, false, "failed to transform response")
 		}
 	} else {
-		responseBody = body
+		responseBody = unwrappedBody
 	}
 
 	// Copy upstream headers (except those we override)
@@ -404,16 +403,19 @@ func (a *AntigravityAdapter) handleStreamResponse(ctx context.Context, w http.Re
 			// Collect all SSE content (preserve complete format including newlines)
 			sseBuffer.Write(result.line)
 
+			// Unwrap v1internal SSE chunk before processing
+			unwrappedLine := unwrapV1InternalSSEChunk(result.line)
+
 			var output []byte
 			if needsConversion {
 				// Transform the chunk
-				transformed, err := a.converter.TransformStreamChunk(targetType, clientType, result.line, state)
+				transformed, err := a.converter.TransformStreamChunk(targetType, clientType, unwrappedLine, state)
 				if err != nil {
 					continue // Skip malformed chunks
 				}
 				output = transformed
 			} else {
-				output = result.line
+				output = unwrappedLine
 			}
 
 			if len(output) > 0 {
@@ -458,83 +460,82 @@ func unwrapGeminiCLIEnvelope(body []byte) []byte {
 	return body
 }
 
-func isRetryableStatusCode(code int) bool {
-	switch code {
-	case 429, 500, 502, 503, 504:
-		return true
-	default:
-		return false
+// wrapV1InternalRequest wraps the request body in v1internal format
+// Similar to Antigravity-Manager's wrap_request function
+func wrapV1InternalRequest(body []byte, projectID, model string) ([]byte, error) {
+	var innerRequest map[string]interface{}
+	if err := json.Unmarshal(body, &innerRequest); err != nil {
+		return nil, err
 	}
+
+	// Remove model field from inner request if present (will be at top level)
+	delete(innerRequest, "model")
+
+	wrapped := map[string]interface{}{
+		"project":     projectID,
+		"requestId":   fmt.Sprintf("agent-%d", time.Now().UnixNano()),
+		"request":     innerRequest,
+		"model":       model,
+		"userAgent":   "antigravity",
+		"requestType": "agent", // Must be "agent", "web_search", or "image_gen" (not "gemini")
+	}
+
+	return json.Marshal(wrapped)
 }
 
-func flattenHeaders(h http.Header) map[string]string {
-	result := make(map[string]string)
-	for k, v := range h {
-		if len(v) > 0 {
-			result[k] = v[0]
+// unwrapV1InternalResponse extracts the response from v1internal wrapper
+func unwrapV1InternalResponse(body []byte) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	if response, ok := data["response"]; ok {
+		if unwrapped, err := json.Marshal(response); err == nil {
+			return unwrapped
 		}
 	}
-	return result
+
+	return body
 }
 
-// Headers to filter out - only privacy/proxy related, NOT application headers
-var filteredHeaders = map[string]bool{
-	// IP and client identification headers (privacy protection)
-	"x-forwarded-for":  true,
-	"x-forwarded-host": true,
-	"x-forwarded-proto": true,
-	"x-forwarded-port": true,
-	"x-real-ip":        true,
-	"x-client-ip":      true,
-	"x-originating-ip": true,
-	"x-remote-ip":      true,
-	"x-remote-addr":    true,
-	"forwarded":        true,
+// unwrapV1InternalSSEChunk unwraps a single SSE chunk from v1internal format
+// Input: "data: {"response": {...}}\n"
+// Output: "data: {...}\n"
+func unwrapV1InternalSSEChunk(line []byte) []byte {
+	lineStr := strings.TrimSpace(string(line))
 
-	// CDN/Cloud provider headers
-	"cf-connecting-ip": true,
-	"cf-ipcountry":     true,
-	"cf-ray":           true,
-	"cf-visitor":       true,
-	"true-client-ip":   true,
-	"fastly-client-ip": true,
-	"x-azure-clientip": true,
-	"x-azure-fdid":     true,
-	"x-azure-ref":      true,
-
-	// Tracing headers
-	"x-request-id":     true,
-	"x-correlation-id": true,
-	"x-trace-id":       true,
-	"x-amzn-trace-id":  true,
-	"x-b3-traceid":     true,
-	"x-b3-spanid":      true,
-	"x-b3-parentspanid": true,
-	"x-b3-sampled":     true,
-	"traceparent":      true,
-	"tracestate":       true,
-
-	// Headers that will be overridden
-	"host":          true,
-	"content-length": true,
-	"authorization": true,
-	"x-api-key":     true,
-}
-
-// copyHeadersFiltered copies headers from src to dst, filtering out sensitive headers
-func copyHeadersFiltered(dst, src http.Header) {
-	if src == nil {
-		return
+	// Skip empty lines
+	if lineStr == "" {
+		return line
 	}
-	for key, values := range src {
-		lowerKey := strings.ToLower(key)
-		if filteredHeaders[lowerKey] {
-			continue
-		}
-		for _, v := range values {
-			dst.Add(key, v)
+
+	// Check if it's a data line
+	if !strings.HasPrefix(lineStr, "data: ") {
+		return line
+	}
+
+	jsonPart := strings.TrimPrefix(lineStr, "data: ")
+
+	// Skip non-JSON data
+	if !strings.HasPrefix(jsonPart, "{") {
+		return line
+	}
+
+	// Try to parse and extract response field
+	var wrapper map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonPart), &wrapper); err != nil {
+		return line
+	}
+
+	// Extract "response" field if present
+	if response, ok := wrapper["response"]; ok {
+		if unwrapped, err := json.Marshal(response); err == nil {
+			return []byte("data: " + string(unwrapped) + "\n")
 		}
 	}
+
+	return line
 }
 
 // Response headers to exclude when copying
@@ -558,5 +559,30 @@ func copyResponseHeaders(dst, src http.Header) {
 		for _, v := range values {
 			dst.Add(key, v)
 		}
+	}
+}
+
+// flattenHeaders converts http.Header to map[string]string (first value only)
+func flattenHeaders(h http.Header) map[string]string {
+	result := make(map[string]string)
+	for key, values := range h {
+		if len(values) > 0 {
+			result[key] = values[0]
+		}
+	}
+	return result
+}
+
+// isRetryableStatusCode returns true if the status code indicates a retryable error
+func isRetryableStatusCode(code int) bool {
+	switch code {
+	case http.StatusTooManyRequests, // 429
+		http.StatusInternalServerError,    // 500
+		http.StatusBadGateway,             // 502
+		http.StatusServiceUnavailable,     // 503
+		http.StatusGatewayTimeout:         // 504
+		return true
+	default:
+		return false
 	}
 }
