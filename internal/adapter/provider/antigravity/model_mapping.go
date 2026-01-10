@@ -16,6 +16,11 @@ var claudeToGeminiMap = map[string]string{
 	"claude-opus-4":              "claude-opus-4-5-thinking",
 	"claude-opus-4-5-20251101":   "claude-opus-4-5-thinking",
 
+	// Haiku 映射 (like Antigravity-Manager: Haiku -> claude-sonnet-4-5)
+	"claude-haiku-4":            "claude-sonnet-4-5",
+	"claude-3-haiku-20240307":   "claude-sonnet-4-5",
+	"claude-haiku-4-5-20251001": "claude-sonnet-4-5",
+
 	// OpenAI 协议映射表
 	"gpt-4":               "gemini-2.5-pro",
 	"gpt-4-turbo":         "gemini-2.5-pro",
@@ -58,18 +63,13 @@ func MapClaudeModelToGemini(input string) string {
 		return mapped
 	}
 
-	// 2. Haiku 智能降级 (like Antigravity-Manager)
-	// 将所有 Haiku 模型自动降级到 gemini-2.5-flash-lite
-	if strings.Contains(strings.ToLower(cleanInput), "haiku") {
-		return "gemini-2.5-flash-lite"
-	}
-
-	// 3. Pass-through known prefixes (gemini-, -thinking) to support dynamic suffixes
+	// 2. Pass-through known prefixes (gemini-, -thinking) to support dynamic suffixes
+	// (like Antigravity-Manager)
 	if strings.HasPrefix(cleanInput, "gemini-") || strings.Contains(cleanInput, "thinking") {
 		return cleanInput
 	}
 
-	// 4. Fallback to default
+	// 3. Fallback to default
 	return "claude-sonnet-4-5"
 }
 
