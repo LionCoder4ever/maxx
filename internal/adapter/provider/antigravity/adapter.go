@@ -86,6 +86,14 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 	targetType := domain.ClientTypeGemini
 	needsConversion := clientType != targetType
 
+	// [CRITICAL FIX] Pre-clean cache_control from request body (like Antigravity-Manager)
+	// VS Code and other clients send back historical messages with cache_control
+	// which causes "Extra inputs are not permitted" errors
+	// This MUST be done BEFORE any transformation
+	if clientType == domain.ClientTypeClaude {
+		requestBody = cleanCacheControlFromRequest(requestBody)
+	}
+
 	// Transform request if needed
 	var geminiBody []byte
 	if needsConversion {
@@ -637,4 +645,85 @@ func (a *AntigravityAdapter) handleResourceExhausted(ctx context.Context, body [
 
 	// Found quota reset timestamp, set cooldown until that time
 	cooldown.Default().SetCooldown(provider.ID, resetTime)
+}
+
+// cleanCacheControlFromRequest removes cache_control fields from Claude request
+// (like Antigravity-Manager's clean_cache_control_from_messages)
+//
+// VS Code and other clients send back historical messages with cache_control,
+// which the API rejects with "Extra inputs are not permitted" errors.
+// This must be done BEFORE any transformation to ensure complete cleanup.
+func cleanCacheControlFromRequest(requestBody []byte) []byte {
+	var req map[string]interface{}
+	if err := json.Unmarshal(requestBody, &req); err != nil {
+		return requestBody
+	}
+
+	modified := false
+
+	// Clean messages array
+	if messages, ok := req["messages"].([]interface{}); ok {
+		for _, msg := range messages {
+			msgMap, ok := msg.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// Clean content array
+			if content, ok := msgMap["content"].([]interface{}); ok {
+				for _, block := range content {
+					blockMap, ok := block.(map[string]interface{})
+					if !ok {
+						continue
+					}
+
+					// Remove cache_control from any content block
+					if _, hasCacheControl := blockMap["cache_control"]; hasCacheControl {
+						delete(blockMap, "cache_control")
+						modified = true
+					}
+				}
+			}
+		}
+	}
+
+	// Clean system prompt
+	if system, ok := req["system"].([]interface{}); ok {
+		for _, block := range system {
+			blockMap, ok := block.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			if _, hasCacheControl := blockMap["cache_control"]; hasCacheControl {
+				delete(blockMap, "cache_control")
+				modified = true
+			}
+		}
+	}
+
+	// Clean tools
+	if tools, ok := req["tools"].([]interface{}); ok {
+		for _, tool := range tools {
+			toolMap, ok := tool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			if _, hasCacheControl := toolMap["cache_control"]; hasCacheControl {
+				delete(toolMap, "cache_control")
+				modified = true
+			}
+		}
+	}
+
+	if !modified {
+		return requestBody
+	}
+
+	result, err := json.Marshal(req)
+	if err != nil {
+		return requestBody
+	}
+	return result
 }

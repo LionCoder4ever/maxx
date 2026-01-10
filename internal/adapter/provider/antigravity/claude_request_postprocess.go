@@ -22,8 +22,9 @@ You are pair programming with a USER to solve their coding task. The task may re
 // 6. Applies skip_thought_signature_validator for tool calls without valid signatures
 // 7. Merges adjacent messages with same role (like Antigravity-Manager)
 // 8. Injects toolConfig, stopSequences, effortLevel (like Antigravity-Manager)
-// 9. Cleans cache_control from message contents (like Antigravity-Manager)
-// 10. Validates signature model compatibility (like Antigravity-Manager)
+// 9. Validates signature model compatibility (like Antigravity-Manager)
+//
+// Note: cache_control cleaning is now done in adapter.go BEFORE transformation
 func PostProcessClaudeRequest(geminiBody []byte, sessionID string, hasThinking bool, claudeRequest []byte, mappedModel string) []byte {
 	var request map[string]interface{}
 	if err := json.Unmarshal(geminiBody, &request); err != nil {
@@ -70,39 +71,31 @@ func PostProcessClaudeRequest(geminiBody []byte, sessionID string, hasThinking b
 		}
 	}
 
-	// 7. Clean cache_control from message contents (like Antigravity-Manager)
-	// VS Code and other clients may send back historical messages with cache_control
-	if contents, ok := request["contents"].([]interface{}); ok {
-		if CleanCacheControlFromContents(contents) {
-			modified = true
-		}
-	}
-
-	// 8. Process contents for signature caching, skip sentinel, and model compatibility
+	// 7. Process contents for signature caching, skip sentinel, and model compatibility
 	if contents, ok := request["contents"].([]interface{}); ok {
 		if processContentsForSignatures(contents, sessionID, mappedModel) {
 			modified = true
 		}
 	}
 
-	// 9. Inject toolConfig with VALIDATED mode when tools exist (like Antigravity-Manager)
+	// 8. Inject toolConfig with VALIDATED mode when tools exist (like Antigravity-Manager)
 	if InjectToolConfig(request) {
 		modified = true
 	}
 
-	// 10. Inject stop sequences to generationConfig (like Antigravity-Manager)
+	// 9. Inject stop sequences to generationConfig (like Antigravity-Manager)
 	if InjectStopSequences(request) {
 		modified = true
 	}
 
-	// 11. Inject effortLevel from Claude output_config.effort (like Antigravity-Manager)
+	// 10. Inject effortLevel from Claude output_config.effort (like Antigravity-Manager)
 	if claudeRequest != nil {
 		if InjectEffortLevel(request, claudeRequest) {
 			modified = true
 		}
 	}
 
-	// 12. If thinking is disabled, clean all thinking-related fields recursively
+	// 11. If thinking is disabled, clean all thinking-related fields recursively
 	if !hasThinking {
 		CleanThinkingFieldsRecursive(request)
 		modified = true
@@ -343,6 +336,15 @@ func processContentsForSignatures(contents []interface{}, sessionID string, mapp
 
 			// Check if this is a function call part
 			if fc, hasFc := partMap["functionCall"].(map[string]interface{}); hasFc {
+				// [NEW] Clean args to remove illegal JSON Schema fields (like Antigravity-Manager)
+				// Some clients inject $schema, additionalProperties, etc. in tool arguments
+				if args, ok := fc["args"].(map[string]interface{}); ok {
+					CleanJSONSchema(args)
+					fc["args"] = args
+					partMap["functionCall"] = fc
+					modified = true
+				}
+
 				existingSig, _ := partMap["thoughtSignature"].(string)
 
 				// [FIX] Try to recover signature from tool_id cache (like Antigravity-Manager)
@@ -363,14 +365,19 @@ func processContentsForSignatures(contents []interface{}, sessionID string, mapp
 					}
 				}
 
-				// If still no valid signature, use current thinking signature or skip sentinel
+				// [CRITICAL FIX] Only add thoughtSignature if we have a valid one
+				// Vertex AI v1internal rejects sentinel values like "skip_thought_signature_validator"
+				// Unlike CLIProxyAPI, we must NOT use sentinel values as fallback
 				if !HasValidSignature(existingSig) {
 					if HasValidSignature(currentThinkingSignature) {
 						partMap["thoughtSignature"] = currentThinkingSignature
-					} else {
-						// Use skip sentinel (like CLIProxyAPI)
-						partMap["thoughtSignature"] = SkipSignatureValidator
+						modified = true
 					}
+					// If no valid signature available, do NOT add the field
+					// Vertex AI will handle this gracefully without the sentinel
+				} else {
+					// Ensure existing valid signature is set
+					partMap["thoughtSignature"] = existingSig
 					modified = true
 				}
 				parts[i] = partMap
