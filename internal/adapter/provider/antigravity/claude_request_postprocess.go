@@ -22,7 +22,9 @@ You are pair programming with a USER to solve their coding task. The task may re
 // 6. Applies skip_thought_signature_validator for tool calls without valid signatures
 // 7. Merges adjacent messages with same role (like Antigravity-Manager)
 // 8. Injects toolConfig, stopSequences, effortLevel (like Antigravity-Manager)
-func PostProcessClaudeRequest(geminiBody []byte, sessionID string, hasThinking bool, claudeRequest []byte) []byte {
+// 9. Cleans cache_control from message contents (like Antigravity-Manager)
+// 10. Validates signature model compatibility (like Antigravity-Manager)
+func PostProcessClaudeRequest(geminiBody []byte, sessionID string, hasThinking bool, claudeRequest []byte, mappedModel string) []byte {
 	var request map[string]interface{}
 	if err := json.Unmarshal(geminiBody, &request); err != nil {
 		return geminiBody
@@ -68,31 +70,39 @@ func PostProcessClaudeRequest(geminiBody []byte, sessionID string, hasThinking b
 		}
 	}
 
-	// 7. Process contents for signature caching and skip sentinel
+	// 7. Clean cache_control from message contents (like Antigravity-Manager)
+	// VS Code and other clients may send back historical messages with cache_control
 	if contents, ok := request["contents"].([]interface{}); ok {
-		if processContentsForSignatures(contents, sessionID) {
+		if CleanCacheControlFromContents(contents) {
 			modified = true
 		}
 	}
 
-	// 8. Inject toolConfig with VALIDATED mode when tools exist (like Antigravity-Manager)
+	// 8. Process contents for signature caching, skip sentinel, and model compatibility
+	if contents, ok := request["contents"].([]interface{}); ok {
+		if processContentsForSignatures(contents, sessionID, mappedModel) {
+			modified = true
+		}
+	}
+
+	// 9. Inject toolConfig with VALIDATED mode when tools exist (like Antigravity-Manager)
 	if InjectToolConfig(request) {
 		modified = true
 	}
 
-	// 9. Inject stop sequences to generationConfig (like Antigravity-Manager)
+	// 10. Inject stop sequences to generationConfig (like Antigravity-Manager)
 	if InjectStopSequences(request) {
 		modified = true
 	}
 
-	// 10. Inject effortLevel from Claude output_config.effort (like Antigravity-Manager)
+	// 11. Inject effortLevel from Claude output_config.effort (like Antigravity-Manager)
 	if claudeRequest != nil {
 		if InjectEffortLevel(request, claudeRequest) {
 			modified = true
 		}
 	}
 
-	// 11. If thinking is disabled, clean all thinking-related fields recursively
+	// 12. If thinking is disabled, clean all thinking-related fields recursively
 	if !hasThinking {
 		CleanThinkingFieldsRecursive(request)
 		modified = true
@@ -259,7 +269,8 @@ func injectInterleavedHint(request map[string]interface{}) bool {
 // 2. Check signature model compatibility (like Antigravity-Manager)
 // 3. Recover signatures from tool_id cache
 // 4. Apply skip_thought_signature_validator for tool calls without valid signatures
-func processContentsForSignatures(contents []interface{}, sessionID string) bool {
+// 5. Validate cross-model signature compatibility
+func processContentsForSignatures(contents []interface{}, sessionID string, mappedModel string) bool {
 	modified := false
 	cache := GlobalSignatureCache()
 
@@ -295,6 +306,13 @@ func processContentsForSignatures(contents []interface{}, sessionID string) bool
 				// Try to get cached signature first
 				if sessionID != "" && text != "" {
 					if cachedSig := cache.GetSessionSignature(sessionID, text); cachedSig != "" {
+						// [NEW] Check model compatibility before using cached signature
+						if cachedFamily := cache.GetSignatureFamily(cachedSig); cachedFamily != "" {
+							if !IsModelCompatible(cachedFamily, mappedModel) {
+								// Incompatible signature - skip and let it be filtered out
+								continue
+							}
+						}
 						partMap["thoughtSignature"] = cachedSig
 						currentThinkingSignature = cachedSig
 						modified = true
@@ -303,8 +321,18 @@ func processContentsForSignatures(contents []interface{}, sessionID string) bool
 					}
 				}
 
-				// Use existing signature if valid
+				// [NEW] Check model compatibility for existing signature
 				if HasValidSignature(existingSig) {
+					if cachedFamily := cache.GetSignatureFamily(existingSig); cachedFamily != "" {
+						if !IsModelCompatible(cachedFamily, mappedModel) {
+							// Incompatible signature - downgrade to text
+							delete(partMap, "thought")
+							delete(partMap, "thoughtSignature")
+							parts[i] = partMap
+							modified = true
+							continue
+						}
+					}
 					currentThinkingSignature = existingSig
 				} else {
 					// Invalid or no signature - drop the thinking block
@@ -321,6 +349,13 @@ func processContentsForSignatures(contents []interface{}, sessionID string) bool
 				if !HasValidSignature(existingSig) {
 					if fcID, ok := fc["id"].(string); ok && fcID != "" {
 						if cachedSig := cache.GetToolSignature(fcID); cachedSig != "" {
+							// [NEW] Check model compatibility
+							if cachedFamily := cache.GetSignatureFamily(cachedSig); cachedFamily != "" {
+								if !IsModelCompatible(cachedFamily, mappedModel) {
+									// Incompatible signature - skip
+									continue
+								}
+							}
 							existingSig = cachedSig
 							partMap["thoughtSignature"] = cachedSig
 							modified = true
@@ -723,4 +758,53 @@ func InjectEffortLevel(request map[string]interface{}, claudeRequest []byte) boo
 
 	genConfig["effortLevel"] = MapEffortLevel(claudeReq.OutputConfig.Effort)
 	return true
+}
+
+// CleanCacheControlFromContents removes cache_control fields from message contents
+// (like Antigravity-Manager's clean_cache_control_from_messages)
+//
+// VS Code and other clients may send back historical messages with cache_control
+// which is not accepted by the API. This function deep cleans all cache_control fields.
+func CleanCacheControlFromContents(contents []interface{}) bool {
+	modified := false
+
+	for _, content := range contents {
+		contentMap, ok := content.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		parts, ok := contentMap["parts"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		for i, part := range parts {
+			partMap, ok := part.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// Remove cache_control from this part
+			if _, hasCacheControl := partMap["cache_control"]; hasCacheControl {
+				delete(partMap, "cache_control")
+				parts[i] = partMap
+				modified = true
+			}
+
+			// Also check nested structures (like inlineData, functionCall, etc.)
+			for key, value := range partMap {
+				if nestedMap, ok := value.(map[string]interface{}); ok {
+					if _, hasCacheControl := nestedMap["cache_control"]; hasCacheControl {
+						delete(nestedMap, "cache_control")
+						partMap[key] = nestedMap
+						parts[i] = partMap
+						modified = true
+					}
+				}
+			}
+		}
+	}
+
+	return modified
 }

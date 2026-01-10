@@ -128,7 +128,7 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 
-		geminiBody = PostProcessClaudeRequest(geminiBody, sessionID, hasThinking, requestBody)
+		geminiBody = PostProcessClaudeRequest(geminiBody, sessionID, hasThinking, requestBody, mappedModel)
 	}
 
 	// Wrap request in v1internal format
