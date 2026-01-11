@@ -166,7 +166,8 @@ func (d *DB) migrate() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		provider_id INTEGER NOT NULL,
 		client_type TEXT NOT NULL DEFAULT '',
-		until_time DATETIME NOT NULL
+		until_time DATETIME NOT NULL,
+		reason TEXT NOT NULL DEFAULT 'unknown'
 	);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_cooldowns_provider_client ON cooldowns(provider_id, client_type);
 	CREATE INDEX IF NOT EXISTS idx_cooldowns_until ON cooldowns(until_time);
@@ -203,6 +204,19 @@ func (d *DB) migrate() error {
 	_, err := d.db.Exec(schema)
 	if err != nil {
 		return err
+	}
+
+	// Migration: Add reason column to cooldowns if it doesn't exist
+	// Check if reason column exists
+	var hasReason bool
+	row := d.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cooldowns') WHERE name='reason'`)
+	row.Scan(&hasReason)
+
+	if !hasReason {
+		_, err = d.db.Exec(`ALTER TABLE cooldowns ADD COLUMN reason TEXT NOT NULL DEFAULT 'unknown'`)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

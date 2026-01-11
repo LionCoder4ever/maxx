@@ -17,7 +17,7 @@ func NewCooldownRepository(db *DB) repository.CooldownRepository {
 }
 
 func (r *CooldownRepository) GetAll() ([]*domain.Cooldown, error) {
-	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time
+	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time, reason
 	          FROM cooldowns
 	          WHERE until_time > datetime('now')`
 
@@ -31,13 +31,15 @@ func (r *CooldownRepository) GetAll() ([]*domain.Cooldown, error) {
 	for rows.Next() {
 		cd := &domain.Cooldown{}
 		var createdAt, updatedAt, untilTime string
-		if err := rows.Scan(&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime); err != nil {
+		var reason string
+		if err := rows.Scan(&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime, &reason); err != nil {
 			return nil, err
 		}
 
 		cd.CreatedAt, _ = parseTimeString(createdAt)
 		cd.UpdatedAt, _ = parseTimeString(updatedAt)
 		cd.UntilTime, _ = parseTimeString(untilTime)
+		cd.Reason = domain.CooldownReason(reason)
 		cooldowns = append(cooldowns, cd)
 	}
 
@@ -45,7 +47,7 @@ func (r *CooldownRepository) GetAll() ([]*domain.Cooldown, error) {
 }
 
 func (r *CooldownRepository) GetByProvider(providerID uint64) ([]*domain.Cooldown, error) {
-	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time
+	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time, reason
 	          FROM cooldowns
 	          WHERE provider_id = ? AND until_time > datetime('now')`
 
@@ -59,13 +61,15 @@ func (r *CooldownRepository) GetByProvider(providerID uint64) ([]*domain.Cooldow
 	for rows.Next() {
 		cd := &domain.Cooldown{}
 		var createdAt, updatedAt, untilTime string
-		if err := rows.Scan(&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime); err != nil {
+		var reason string
+		if err := rows.Scan(&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime, &reason); err != nil {
 			return nil, err
 		}
 
 		cd.CreatedAt, _ = parseTimeString(createdAt)
 		cd.UpdatedAt, _ = parseTimeString(updatedAt)
 		cd.UntilTime, _ = parseTimeString(untilTime)
+		cd.Reason = domain.CooldownReason(reason)
 		cooldowns = append(cooldowns, cd)
 	}
 
@@ -73,15 +77,16 @@ func (r *CooldownRepository) GetByProvider(providerID uint64) ([]*domain.Cooldow
 }
 
 func (r *CooldownRepository) Get(providerID uint64, clientType string) (*domain.Cooldown, error) {
-	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time
+	query := `SELECT id, created_at, updated_at, provider_id, client_type, until_time, reason
 	          FROM cooldowns
 	          WHERE provider_id = ? AND client_type = ? AND until_time > datetime('now')`
 
 	cd := &domain.Cooldown{}
 	var createdAt, updatedAt, untilTime string
+	var reason string
 
 	err := r.db.db.QueryRow(query, providerID, clientType).Scan(
-		&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime,
+		&cd.ID, &createdAt, &updatedAt, &cd.ProviderID, &cd.ClientType, &untilTime, &reason,
 	)
 
 	if err == sql.ErrNoRows {
@@ -94,6 +99,7 @@ func (r *CooldownRepository) Get(providerID uint64, clientType string) (*domain.
 	cd.CreatedAt, _ = parseTimeString(createdAt)
 	cd.UpdatedAt, _ = parseTimeString(updatedAt)
 	cd.UntilTime, _ = parseTimeString(untilTime)
+	cd.Reason = domain.CooldownReason(reason)
 
 	return cd, nil
 }
@@ -110,21 +116,22 @@ func (r *CooldownRepository) Upsert(cooldown *domain.Cooldown) error {
 	if existing != nil {
 		// Update
 		query := `UPDATE cooldowns
-		          SET until_time = ?, updated_at = ?
+		          SET until_time = ?, reason = ?, updated_at = ?
 		          WHERE provider_id = ? AND client_type = ?`
 
-		_, err = r.db.db.Exec(query, formatTime(cooldown.UntilTime), formatTime(now), cooldown.ProviderID, cooldown.ClientType)
+		_, err = r.db.db.Exec(query, formatTime(cooldown.UntilTime), string(cooldown.Reason), formatTime(now), cooldown.ProviderID, cooldown.ClientType)
 		return err
 	}
 
 	// Insert
-	query := `INSERT INTO cooldowns (provider_id, client_type, until_time, created_at, updated_at)
-	          VALUES (?, ?, ?, ?, ?)`
+	query := `INSERT INTO cooldowns (provider_id, client_type, until_time, reason, created_at, updated_at)
+	          VALUES (?, ?, ?, ?, ?, ?)`
 
 	result, err := r.db.db.Exec(query,
 		cooldown.ProviderID,
 		cooldown.ClientType,
 		formatTime(cooldown.UntilTime),
+		string(cooldown.Reason),
 		formatTime(now),
 		formatTime(now),
 	)

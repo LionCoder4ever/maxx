@@ -62,12 +62,12 @@ func (p *ExponentialBackoffPolicy) CalculateCooldown(failureCount int) time.Dura
 type CooldownReason string
 
 const (
-	ReasonServerError     CooldownReason = "server_error"      // 5xx errors
-	ReasonNetworkError    CooldownReason = "network_error"     // Connection timeout, DNS failure, etc.
-	ReasonQuotaExhausted  CooldownReason = "quota_exhausted"   // API quota exhausted (fallback when no explicit time)
-	ReasonRateLimit       CooldownReason = "rate_limit"        // Rate limit (fallback when no explicit time)
-	ReasonConcurrentLimit CooldownReason = "concurrent_limit"  // Concurrent request limit (fallback when no explicit time)
-	ReasonUnknown         CooldownReason = "unknown"           // Unknown error
+	ReasonServerError     CooldownReason = "server_error"          // 5xx errors
+	ReasonNetworkError    CooldownReason = "network_error"         // Connection timeout, DNS failure, etc.
+	ReasonQuotaExhausted  CooldownReason = "quota_exhausted"       // API quota exhausted (fallback when no explicit time)
+	ReasonRateLimit       CooldownReason = "rate_limit_exceeded"   // Rate limit (fallback when no explicit time)
+	ReasonConcurrentLimit CooldownReason = "concurrent_limit"      // Concurrent request limit (fallback when no explicit time)
+	ReasonUnknown         CooldownReason = "unknown"               // Unknown error
 )
 
 // DefaultPolicies returns the default policy configuration

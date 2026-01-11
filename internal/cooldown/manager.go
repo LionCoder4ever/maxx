@@ -65,12 +65,14 @@ func (m *Manager) LoadFromDatabase() error {
 		}
 
 		m.cooldowns = make(map[CooldownKey]time.Time)
+		m.reasons = make(map[CooldownKey]CooldownReason)
 		for _, cd := range cooldowns {
 			key := CooldownKey{
 				ProviderID: cd.ProviderID,
 				ClientType: cd.ClientType,
 			}
 			m.cooldowns[key] = cd.UntilTime
+			m.reasons[key] = CooldownReason(cd.Reason)
 		}
 
 		log.Printf("[Cooldown] Loaded %d cooldowns from database", len(cooldowns))
@@ -164,6 +166,7 @@ func (m *Manager) setCooldownLocked(providerID uint64, clientType string, until 
 			ProviderID: providerID,
 			ClientType: clientType,
 			UntilTime:  until,
+			Reason:     domain.CooldownReason(reason),
 		}
 		if err := m.repository.Upsert(cd); err != nil {
 			log.Printf("[Cooldown] Failed to persist cooldown for provider %d: %v", providerID, err)

@@ -84,15 +84,11 @@ export function SortableProviderRow({
     pointerEvents: isDragging ? 'none' : undefined,
   };
 
-  const handleClick = () => {
-    if (isDragging) return;
-
+  const handleRowClick = (e: React.MouseEvent) => {
     // 如果在 cooldown，打开弹窗
     if (cooldown) {
+      e.stopPropagation();
       setShowCooldownDialog(true);
-    } else {
-      // 否则 toggle
-      onToggle();
     }
   };
 
@@ -108,8 +104,7 @@ export function SortableProviderRow({
         style={style}
         {...attributes}
         {...listeners}
-        onClick={handleClick}
-        className="cursor-pointer active:cursor-grabbing"
+        className="active:cursor-grabbing"
       >
         <ProviderRowContent
           item={item}
@@ -120,6 +115,8 @@ export function SortableProviderRow({
           isToggling={isToggling}
           onToggle={onToggle}
           onDelete={onDelete}
+          onRowClick={handleRowClick}
+          isInCooldown={!!cooldown}
         />
       </div>
 
@@ -146,6 +143,8 @@ type ProviderRowContentProps = {
   isOverlay?: boolean;
   onToggle: () => void;
   onDelete?: () => void;
+  onRowClick?: (e: React.MouseEvent) => void;
+  isInCooldown?: boolean;
 };
 
 // 获取 Claude 模型额度百分比和重置时间
@@ -191,6 +190,8 @@ export function ProviderRowContent({
   isOverlay,
   onToggle,
   onDelete,
+  onRowClick,
+  isInCooldown: isInCooldownProp,
 }: ProviderRowContentProps) {
   const { provider, enabled, route, isNative } = item;
   const color = getProviderColor(provider.type);
@@ -203,25 +204,36 @@ export function ProviderRowContent({
   // 获取 cooldown 状态
   const { getCooldownForProvider, formatRemaining, clearCooldown, isClearingCooldown } = useCooldowns();
   const cooldown = getCooldownForProvider(provider.id, clientType);
-  const isInCooldown = !!cooldown;
+  const isInCooldown = isInCooldownProp ?? !!cooldown;
 
   const handleClearCooldown = (e: React.MouseEvent) => {
     e.stopPropagation();
     clearCooldown(provider.id);
   };
 
+  const handleContentClick = (e: React.MouseEvent) => {
+    // 如果有 onRowClick 回调（在 cooldown 状态），优先使用
+    if (onRowClick && isInCooldown) {
+      onRowClick(e);
+    } else if (!isInCooldown) {
+      // 否则执行 toggle
+      onToggle();
+    }
+  };
+
   return (
     <div
+      onClick={handleContentClick}
       className={`
         flex items-center gap-md p-md rounded-lg border transition-all duration-200 relative overflow-hidden
         ${
           isInCooldown
-            ? 'bg-cyan-500/5 border-cyan-400/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+            ? 'bg-cyan-500/5 border-cyan-400/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] cursor-pointer'
             : enabled
             ? streamingCount > 0
               ? 'bg-surface-primary'
-              : 'bg-emerald-400/[0.03] border-emerald-400/30 shadow-sm'
-            : 'bg-surface-secondary/50 border-dashed border-border opacity-95'
+              : 'bg-emerald-400/[0.03] border-emerald-400/30 shadow-sm cursor-pointer'
+            : 'bg-surface-secondary/50 border-dashed border-border opacity-95 cursor-pointer'
         }
         ${isOverlay ? 'shadow-xl ring-2 ring-accent opacity-100' : ''}
       `}
