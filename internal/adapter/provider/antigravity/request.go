@@ -279,13 +279,149 @@ func deepCleanUndefined(data map[string]interface{}) {
 			deepCleanUndefined(nested)
 		}
 		if arr, ok := val.([]interface{}); ok {
+			var filtered []interface{}
 			for _, item := range arr {
+				// Drop literal "[undefined]" items
+				if s, ok := item.(string); ok && s == "[undefined]" {
+					continue
+				}
 				if m, ok := item.(map[string]interface{}); ok {
 					deepCleanUndefined(m)
 				}
+				filtered = append(filtered, item)
+			}
+			data[key] = filtered
+		}
+	}
+}
+
+// detectBackgroundTask checks the latest meaningful user message for background-task keywords
+// Returns (true, modifiedBody) when detected, with tools/thinking stripped and thinking blocks removed
+func detectBackgroundTask(body []byte) (bool, []byte) {
+	var req map[string]interface{}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return false, body
+	}
+
+	messages, ok := req["messages"].([]interface{})
+	if !ok || len(messages) == 0 {
+		return false, body
+	}
+
+	// Find latest user message text
+	var lastUserText string
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg, ok := messages[i].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content := msg["content"]
+		switch c := content.(type) {
+		case string:
+			if strings.TrimSpace(c) != "" {
+				lastUserText = c
+				break
+			}
+		case []interface{}:
+			var texts []string
+			for _, b := range c {
+				if bm, ok := b.(map[string]interface{}); ok {
+					if t, ok := bm["text"].(string); ok && strings.TrimSpace(t) != "" {
+						texts = append(texts, t)
+					}
+				}
+			}
+			if len(texts) > 0 {
+				lastUserText = strings.Join(texts, "\n")
+				break
 			}
 		}
 	}
+
+	if lastUserText == "" {
+		return false, body
+	}
+
+	lower := strings.ToLower(lastUserText)
+
+	// Background task keyword sets (aligned with Manager categories)
+	titleKeywords := []string{
+		"write a 5-10 word title", "conversation title", "生成标题", "为对话起个标题", "title for the conversation",
+	}
+	summaryKeywords := []string{
+		"summarize this coding conversation", "concise summary", "extract key points", "简要总结", "compress the context",
+	}
+	suggestionKeywords := []string{
+		"prompt suggestion", "suggest next prompts", "follow-up questions", "possible next actions", "建议下一步", "recommend next steps",
+	}
+	systemKeywords := []string{
+		"warmup", "<system-reminder>", "this is a system message",
+	}
+	probeKeywords := []string{
+		"check current directory", "list available tools", "verify environment", "环境探测", "test connection",
+	}
+
+	isBackground := containsAny(lower, titleKeywords) ||
+		containsAny(lower, summaryKeywords) ||
+		containsAny(lower, suggestionKeywords) ||
+		containsAny(lower, systemKeywords) ||
+		containsAny(lower, probeKeywords)
+
+	if !isBackground {
+		return false, body
+	}
+
+	// Strip tools and thinking config
+	delete(req, "tools")
+	delete(req, "thinking")
+
+	// Remove thinking/redacted_thinking blocks from assistant/model messages
+	for i, m := range messages {
+		msg, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := msg["role"].(string)
+		if role != "assistant" && role != "model" {
+			continue
+		}
+		blocks, ok := msg["content"].([]interface{})
+		if !ok {
+			continue
+		}
+		var filtered []interface{}
+		for _, b := range blocks {
+			if bm, ok := b.(map[string]interface{}); ok {
+				if t, _ := bm["type"].(string); t == "thinking" || t == "redacted_thinking" {
+					continue
+				}
+			}
+			filtered = append(filtered, b)
+		}
+		msg["content"] = filtered
+		messages[i] = msg
+	}
+	req["messages"] = messages
+
+	newBody, err := json.Marshal(req)
+	if err != nil {
+		return true, body
+	}
+	return true, newBody
+}
+
+// containsAny checks if text contains any keyword (case-insensitive, assumes text already lowercased)
+func containsAny(text string, keywords []string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(text, strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
 }
 
 // injectGoogleSearchTool injects googleSearch tool if not already present

@@ -57,42 +57,55 @@ func (a *AntigravityAdapter) Execute(ctx context.Context, w http.ResponseWriter,
 	requestModel := ctxutil.GetRequestModel(ctx) // Original model from request (e.g., "claude-3-5-sonnet-20241022-online")
 	mappedModel := ctxutil.GetMappedModel(ctx)   // Mapped model after route resolution
 	requestBody := ctxutil.GetRequestBody(ctx)
+	backgroundDowngrade := false
+
+	// Background task downgrade (like Manager) - only for Claude clients
+	if clientType == domain.ClientTypeClaude {
+		if isBg, newBody := detectBackgroundTask(requestBody); isBg {
+			requestBody = newBody
+			mappedModel = "gemini-2.5-flash"
+			backgroundDowngrade = true
+		}
+	}
 
 	// [Model Mapping] Apply Antigravity model mapping (like Antigravity-Manager)
 	// We'll attempt at most twice: original + retry without thinking on signature errors
 	retriedWithoutThinking := false
 
-	for attemptIdx := 0; attemptIdx < 2; attemptIdx++ {
-		ctx = ctxutil.WithRequestModel(baseCtx, requestModel)
-		ctx = ctxutil.WithRequestBody(ctx, requestBody)
+		for attemptIdx := 0; attemptIdx < 2; attemptIdx++ {
+			ctx = ctxutil.WithRequestModel(baseCtx, requestModel)
+			ctx = ctxutil.WithRequestBody(ctx, requestBody)
 
-		// Only map if route didn't provide a mapping (mappedModel empty or same as request)
-		config := provider.Config.Antigravity
-		if mappedModel == "" || mappedModel == requestModel {
-			// Route didn't provide mapping, use our internal mapping with haikuTarget config
-			haikuTarget := ""
-			if config != nil {
-				haikuTarget = config.HaikuTarget
+			// Only map if route didn't provide a mapping (mappedModel empty or same as request)
+			config := provider.Config.Antigravity
+			if mappedModel == "" || mappedModel == requestModel {
+				// Route didn't provide mapping, use our internal mapping with haikuTarget config
+				haikuTarget := ""
+				if config != nil {
+					haikuTarget = config.HaikuTarget
+				}
+				mappedModel = MapClaudeModelToGeminiWithConfig(requestModel, haikuTarget)
 			}
-			mappedModel = MapClaudeModelToGeminiWithConfig(requestModel, haikuTarget)
-		}
-		// If route provided a different mappedModel, trust it and don't re-map
-		// (user/route has explicitly configured the target model)
+			if backgroundDowngrade {
+				mappedModel = "gemini-2.5-flash"
+			}
+			// If route provided a different mappedModel, trust it and don't re-map
+			// (user/route has explicitly configured the target model)
 
-	// Get streaming flag from context (already detected correctly for Gemini URL path)
-	stream := ctxutil.GetIsStream(ctx)
-	clientWantsStream := stream
-	actualStream := stream
-	if !clientWantsStream {
-		// Auto-convert non-stream to stream internally for better quota (like Manager)
-		actualStream = true
-	}
+			// Get streaming flag from context (already detected correctly for Gemini URL path)
+			stream := ctxutil.GetIsStream(ctx)
+			clientWantsStream := stream
+			actualStream := stream
+			if !clientWantsStream {
+				// Auto-convert non-stream to stream internally for better quota (like Manager)
+				actualStream = true
+			}
 
-		// Get access token
-		accessToken, err := a.getAccessToken(ctx)
-		if err != nil {
-			return domain.NewProxyErrorWithMessage(err, true, "failed to get access token")
-		}
+			// Get access token
+			accessToken, err := a.getAccessToken(ctx)
+			if err != nil {
+				return domain.NewProxyErrorWithMessage(err, true, "failed to get access token")
+			}
 
 		// [SessionID Support] Extract metadata.user_id from original request for sessionId (like Antigravity-Manager)
 		sessionID := extractSessionID(requestBody)
@@ -674,6 +687,14 @@ func (a *AntigravityAdapter) handleCollectedStreamResponse(ctx context.Context, 
 
 	var sseBuffer strings.Builder
 	var lastPayload []byte
+	var aggregatedParts []GeminiPart
+	var aggregatedUsage *GeminiUsageMetadata
+	var aggregatedModelVersion string
+	var aggregatedResponseID string
+	var aggregatedFinish string
+	var aggregatedGrounding *GeminiGroundingMetadata
+	// Track tool signatures for reconstruction
+	var lastSignature string
 
 	reader := bufio.NewReader(resp.Body)
 	for {
@@ -715,6 +736,36 @@ func (a *AntigravityAdapter) handleCollectedStreamResponse(ctx context.Context, 
 			}
 
 			lastPayload = []byte(dataStr)
+
+			// Aggregate Gemini stream chunk for final reconstruction
+			var chunk GeminiStreamChunk
+			if unmarshalErr := json.Unmarshal([]byte(dataStr), &chunk); unmarshalErr == nil {
+				if chunk.ModelVersion != "" {
+					aggregatedModelVersion = chunk.ModelVersion
+				}
+				if chunk.ResponseID != "" {
+					aggregatedResponseID = chunk.ResponseID
+				}
+				if chunk.UsageMetadata != nil {
+					aggregatedUsage = chunk.UsageMetadata
+				}
+				if len(chunk.Candidates) > 0 {
+					cand := chunk.Candidates[0]
+					// Capture signature from thought for later tool_use
+					for _, p := range cand.Content.Parts {
+						if p.ThoughtSignature != "" {
+							lastSignature = p.ThoughtSignature
+						}
+					}
+					aggregatedParts = append(aggregatedParts, cand.Content.Parts...)
+					if cand.FinishReason != "" {
+						aggregatedFinish = cand.FinishReason
+					}
+					if cand.GroundingMetadata != nil {
+						aggregatedGrounding = cand.GroundingMetadata
+					}
+				}
+			}
 		}
 
 		if err != nil {
@@ -752,7 +803,34 @@ func (a *AntigravityAdapter) handleCollectedStreamResponse(ctx context.Context, 
 
 	switch clientType {
 	case domain.ClientTypeClaude:
-		responseBody, err = convertGeminiToClaudeResponse(lastPayload, requestModel)
+		// Reconstruct a synthetic Gemini response from aggregated parts
+		// Attach trailing signature to tool_use if missing
+		for i := range aggregatedParts {
+			if aggregatedParts[i].FunctionCall != nil {
+				if aggregatedParts[i].ThoughtSignature == "" && lastSignature != "" {
+					aggregatedParts[i].ThoughtSignature = lastSignature
+				}
+			}
+		}
+		synthetic := map[string]interface{}{
+			"candidates": []map[string]interface{}{
+				{
+					"content": map[string]interface{}{
+						"parts": aggregatedParts,
+					},
+					"finishReason":      aggregatedFinish,
+					"groundingMetadata": aggregatedGrounding,
+				},
+			},
+			"usageMetadata": aggregatedUsage,
+			"modelVersion":  aggregatedModelVersion,
+			"responseId":    aggregatedResponseID,
+		}
+		if aggregatedGrounding == nil {
+			delete(synthetic["candidates"].([]map[string]interface{})[0], "groundingMetadata")
+		}
+		synthBytes, _ := json.Marshal(synthetic)
+		responseBody, err = convertGeminiToClaudeResponse(synthBytes, requestModel)
 		if err != nil {
 			return domain.NewProxyErrorWithMessage(domain.ErrFormatConversion, false, "failed to transform streamed response")
 		}
