@@ -8,11 +8,8 @@ services:
     ports:
       - "9880:9880"
     volumes:
-      # Persist database
+      # Persist data (database, logs, etc.)
       - maxx-data:/data
-    environment:
-      # Override default settings if needed
-      - DB_PATH=/data/maxx.db
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9880/health"]
       interval: 30s

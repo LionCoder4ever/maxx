@@ -52,14 +52,11 @@ COPY --from=backend-builder /app/maxx .
 # Copy built frontend from frontend builder
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
-# Create directory for database
+# Create directory for data (database, logs, etc.)
 RUN mkdir -p /data
 
 # Expose port
 EXPOSE 9880
-
-# Set environment variables
-ENV DB_PATH=/data/maxx.db
 
 # Run the application
 CMD ["./maxx", "-addr", ":9880", "-db", "/data/maxx.db"]
