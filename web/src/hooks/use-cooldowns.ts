@@ -1,12 +1,11 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { getTransport } from '@/lib/transport';
 import type { Cooldown } from '@/lib/transport';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 export function useCooldowns() {
   const queryClient = useQueryClient();
   const transport = getTransport();
-  const [, setTick] = useState(0); // Force re-render every second
 
   const { data: cooldowns = [], isLoading, error } = useQuery({
     queryKey: ['cooldowns'],
@@ -24,20 +23,34 @@ export function useCooldowns() {
     },
   });
 
-  // Update countdown display every second (client-side only, no server request)
+  // Setup timeouts for each cooldown to invalidate when they expire
   useEffect(() => {
     if (cooldowns.length === 0) {
       return;
     }
 
-    const interval = setInterval(() => {
-      setTick(prev => prev + 1); // Trigger re-render to update countdown
-    }, 1000);
+    const timeouts: number[] = [];
+
+    cooldowns.forEach((cooldown) => {
+      const until = new Date(cooldown.until).getTime();
+      const now = Date.now();
+      const delay = until - now;
+
+      // If cooldown will expire in the future, set a timeout
+      if (delay > 0) {
+        const timeout = setTimeout(() => {
+          // Invalidate query when cooldown expires
+          queryClient.invalidateQueries({ queryKey: ['cooldowns'] });
+        }, delay);
+        timeouts.push(timeout);
+      }
+    });
 
     return () => {
-      clearInterval(interval);
+      // Clear all timeouts on cleanup
+      timeouts.forEach(timeout => clearTimeout(timeout));
     };
-  }, [cooldowns.length]);
+  }, [cooldowns, queryClient]);
 
   // Helper to get cooldown for a specific provider
   const getCooldownForProvider = (providerId: number, clientType?: string) => {
