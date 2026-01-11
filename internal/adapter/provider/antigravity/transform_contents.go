@@ -128,6 +128,10 @@ func processThinkingBlock(
 					"text": block.Thinking,
 				}
 			}
+		} else {
+			// [NEW] Cache the signature family for future use
+			// Reference: Antigravity-Manager line 601
+			signatureCache.CacheThinkingFamily(signature, mappedModel)
 		}
 
 		// Valid signature

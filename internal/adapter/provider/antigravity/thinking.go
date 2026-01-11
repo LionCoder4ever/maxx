@@ -51,16 +51,9 @@ func TargetModelSupportsThinking(mappedModel string) bool {
 		return true
 	}
 
-	// Gemini 2.5 models support thinking
-	if strings.Contains(modelLower, "gemini-2.5") {
-		return true
-	}
-
-	// Gemini 3 models support thinking
-	if strings.Contains(modelLower, "gemini-3") {
-		return true
-	}
-
+	// Regular Gemini 2.5/3 models do NOT support thinking without -thinking suffix
+	// Reference: Antigravity-Manager is more conservative (line 183-184)
+	// Only models with explicit "-thinking" suffix are considered compatible
 	return false
 }
 
