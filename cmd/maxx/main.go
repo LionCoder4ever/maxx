@@ -20,14 +20,14 @@ import (
 	"github.com/Bowl42/maxx-next/internal/service"
 )
 
-// getDefaultDBPath returns the default database path (~/.config/maxx/maxx.db)
-func getDefaultDBPath() string {
+// getDefaultDataDir returns the default data directory path (~/.config/maxx)
+func getDefaultDataDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		// Fallback to current directory if home dir is unavailable
-		return "maxx.db"
+		return "."
 	}
-	return filepath.Join(homeDir, ".config", "maxx", "maxx.db")
+	return filepath.Join(homeDir, ".config", "maxx")
 }
 
 // generateInstanceID generates a unique instance ID for this server run
@@ -37,22 +37,32 @@ func generateInstanceID() string {
 }
 
 func main() {
-	// Get default database path
-	defaultDBPath := getDefaultDBPath()
-
 	// Parse flags
 	addr := flag.String("addr", ":9880", "Server address")
-	dbPath := flag.String("db", defaultDBPath, "SQLite database path")
+	dataDir := flag.String("data", "", "Data directory for database and logs (default: ~/.config/maxx)")
 	flag.Parse()
 
-	// Ensure database directory exists
-	dbDir := filepath.Dir(*dbPath)
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		log.Fatalf("Failed to create database directory %s: %v", dbDir, err)
+	// Determine data directory: CLI flag > env var > default
+	var dataDirPath string
+	if *dataDir != "" {
+		dataDirPath = *dataDir
+	} else if envDataDir := os.Getenv("MAXX_DATA_DIR"); envDataDir != "" {
+		dataDirPath = envDataDir
+	} else {
+		dataDirPath = getDefaultDataDir()
 	}
 
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDirPath, 0755); err != nil {
+		log.Fatalf("Failed to create data directory %s: %v", dataDirPath, err)
+	}
+
+	// Construct database and log paths
+	dbPath := filepath.Join(dataDirPath, "maxx.db")
+	logPath := filepath.Join(dataDirPath, "maxx.log")
+
 	// Initialize database
-	db, err := sqlite.NewDB(*dbPath)
+	db, err := sqlite.NewDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
@@ -110,7 +120,7 @@ func main() {
 	wsHub := handler.NewWebSocketHub()
 
 	// Setup log output to broadcast via WebSocket
-	logWriter := handler.NewWebSocketLogWriter(wsHub, os.Stdout)
+	logWriter := handler.NewWebSocketLogWriter(wsHub, os.Stdout, logPath)
 	log.SetOutput(logWriter)
 
 	// Create executor
@@ -136,7 +146,7 @@ func main() {
 
 	// Create handlers
 	proxyHandler := handler.NewProxyHandler(clientAdapter, exec, cachedSessionRepo)
-	adminHandler := handler.NewAdminHandler(adminService)
+	adminHandler := handler.NewAdminHandler(adminService, logPath)
 	antigravityHandler := handler.NewAntigravityHandler(adminService, antigravityQuotaRepo)
 
 	// Setup routes
@@ -177,7 +187,9 @@ func main() {
 
 	// Start server
 	log.Printf("Starting maxx-next server on %s", *addr)
-	log.Printf("Database: %s", *dbPath)
+	log.Printf("Data directory: %s", dataDirPath)
+	log.Printf("  Database: %s", dbPath)
+	log.Printf("  Log file: %s", logPath)
 	log.Printf("Admin API: http://localhost%s/admin/", *addr)
 	log.Printf("WebSocket: ws://localhost%s/ws", *addr)
 	log.Printf("Proxy endpoints:")

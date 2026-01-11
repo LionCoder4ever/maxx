@@ -59,4 +59,4 @@ RUN mkdir -p /data
 EXPOSE 9880
 
 # Run the application
-CMD ["./maxx", "-addr", ":9880", "-db", "/data/maxx.db"]
+CMD ["./maxx", "-addr", ":9880", "-data", "/data"]

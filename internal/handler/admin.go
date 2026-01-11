@@ -15,12 +15,16 @@ import (
 // AdminHandler handles admin API requests over HTTP
 // Delegates business logic to AdminService
 type AdminHandler struct {
-	svc *service.AdminService
+	svc     *service.AdminService
+	logPath string
 }
 
 // NewAdminHandler creates a new admin handler
-func NewAdminHandler(svc *service.AdminService) *AdminHandler {
-	return &AdminHandler{svc: svc}
+func NewAdminHandler(svc *service.AdminService, logPath string) *AdminHandler {
+	return &AdminHandler{
+		svc:     svc,
+		logPath: logPath,
+	}
 }
 
 // ServeHTTP routes admin requests
@@ -699,7 +703,7 @@ func (h *AdminHandler) handleLogs(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 
-	lines, err := ReadLastNLines(limit)
+	lines, err := ReadLastNLines(h.logPath, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

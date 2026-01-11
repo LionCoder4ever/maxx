@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -118,29 +117,12 @@ type WebSocketLogWriter struct {
 	filePath string
 }
 
-// getDefaultLogPath returns the default log path (~/.config/maxx/maxx.log)
-func getDefaultLogPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "maxx.log"
-	}
-	return filepath.Join(homeDir, ".config", "maxx", "maxx.log")
-}
-
 // NewWebSocketLogWriter creates a writer that broadcasts logs via WebSocket and writes to file
-func NewWebSocketLogWriter(hub *WebSocketHub, stdout io.Writer) *WebSocketLogWriter {
-	logPath := getDefaultLogPath()
-
-	// Ensure log directory exists
-	logDir := filepath.Dir(logPath)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Printf("Warning: Failed to create log directory: %v", err)
-	}
-
+func NewWebSocketLogWriter(hub *WebSocketHub, stdout io.Writer, logPath string) *WebSocketLogWriter {
 	// Open log file in append mode
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Printf("Warning: Failed to open log file: %v", err)
+		log.Printf("Warning: Failed to open log file %s: %v", logPath, err)
 	}
 
 	return &WebSocketLogWriter{
@@ -173,10 +155,8 @@ func (w *WebSocketLogWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// ReadLastNLines reads the last n lines from the log file
-func ReadLastNLines(n int) ([]string, error) {
-	logPath := getDefaultLogPath()
-
+// ReadLastNLines reads the last n lines from the specified log file
+func ReadLastNLines(logPath string, n int) ([]string, error) {
 	file, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
