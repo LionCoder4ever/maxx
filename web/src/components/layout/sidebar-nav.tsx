@@ -78,6 +78,9 @@ function RequestsNavItem() {
 }
 
 export function SidebarNav() {
+  const versionDisplay =
+    `v${__APP_VERSION__}` + (__APP_COMMIT__ !== 'unknown' ? ` (${__APP_COMMIT__})` : '');
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -94,7 +97,7 @@ export function SidebarNav() {
       </SidebarContent>
 
       <SidebarFooter>
-        <p className="text-caption text-text-muted px-2">v0.1.0</p>
+        <p className="text-caption text-text-muted px-2">{versionDisplay}</p>
       </SidebarFooter>
     </Sidebar>
   );
