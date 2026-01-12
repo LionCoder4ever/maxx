@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import * as Diff from 'diff'
 import {
   Button,
   Card,
@@ -31,6 +32,10 @@ import {
   Database,
   Info,
   FileInput,
+  Copy,
+  Check,
+  GitCompare,
+  X,
 } from 'lucide-react'
 import { statusVariant } from './index'
 import type {
@@ -64,6 +69,232 @@ function formatCost(microUSD: number): string {
   if (usd < 0.01) return `$${usd.toFixed(4)}`
   if (usd < 1) return `$${usd.toFixed(3)}`
   return `$${usd.toFixed(2)}`
+}
+
+// Copy Button Component
+function CopyButton({ content, label = 'Copy' }: { content: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleCopy}
+      className="h-6 px-2 text-[10px] gap-1"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3" />
+          Copied
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3" />
+          {label}
+        </>
+      )}
+    </Button>
+  )
+}
+
+// Diff Modal Component - Shows line-by-line diff
+function DiffModal({
+  isOpen,
+  onClose,
+  title,
+  leftContent,
+  rightContent,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  leftContent: string
+  rightContent: string
+}) {
+  // Compute diff (must be before any conditional returns)
+  const diffResult = useMemo(() => {
+    return Diff.diffLines(leftContent, rightContent)
+  }, [leftContent, rightContent])
+
+  // Handle ESC key press
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation() // Prevent event from bubbling to parent
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
+  }, [isOpen, onClose])
+
+  // Early return AFTER all hooks
+  if (!isOpen) return null
+
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      e.stopPropagation()
+      onClose()
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={handleBackdropClick}
+      onKeyDown={(e) => e.stopPropagation()} // Prevent any key events from bubbling
+    >
+      <div
+        className="bg-surface-primary border border-border rounded-lg shadow-2xl w-[90vw] h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()} // Prevent clicks inside modal from closing it
+      >
+        {/* Modal Header */}
+        <div className="h-14 border-b border-border px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <GitCompare className="h-5 w-5 text-accent" />
+            <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-8 w-8 text-text-secondary hover:text-text-primary"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* Legend */}
+        <div className="h-10 border-b border-border px-6 flex items-center gap-6 shrink-0 bg-surface-secondary/20">
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 bg-green-500/20 border border-green-500/50 rounded"></div>
+            <span className="text-text-muted">Added in Upstream</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 bg-red-500/20 border border-red-500/50 rounded"></div>
+            <span className="text-text-muted">Removed from Client</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 bg-surface-secondary border border-border rounded"></div>
+            <span className="text-text-muted">Unchanged</span>
+          </div>
+        </div>
+
+        {/* Unified Diff View */}
+        <div className="flex-1 overflow-auto p-4 bg-[#1a1a1a]">
+          <div className="font-mono text-xs">
+            {diffResult.map((part, index) => {
+              const lines = part.value.split('\n').filter((line, idx, arr) => {
+                // Remove the last empty line if it exists
+                return idx < arr.length - 1 || line !== ''
+              })
+
+              return lines.map((line, lineIndex) => {
+                let bgColor = ''
+                let textColor = 'text-text-primary'
+                let prefix = ' '
+                let borderColor = 'border-border/30'
+
+                if (part.added) {
+                  bgColor = 'bg-green-500/10'
+                  textColor = 'text-green-400'
+                  prefix = '+'
+                  borderColor = 'border-green-500/30'
+                } else if (part.removed) {
+                  bgColor = 'bg-red-500/10'
+                  textColor = 'text-red-400'
+                  prefix = '-'
+                  borderColor = 'border-red-500/30'
+                } else {
+                  bgColor = 'bg-surface-primary/20'
+                  textColor = 'text-text-secondary'
+                }
+
+                return (
+                  <div
+                    key={`${index}-${lineIndex}`}
+                    className={`${bgColor} ${textColor} px-4 py-1 border-l-2 ${borderColor} whitespace-pre-wrap break-all leading-relaxed hover:bg-opacity-80 transition-colors`}
+                  >
+                    <span className="inline-block w-4 opacity-60 select-none">
+                      {prefix}
+                    </span>
+                    {line || ' '}
+                  </div>
+                )
+              })
+            })}
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="h-14 border-t border-border px-6 flex items-center justify-between shrink-0">
+          <div className="text-xs text-text-muted">
+            {diffResult.filter(p => p.added).length > 0 && (
+              <span className="text-green-400 mr-4">
+                +{diffResult.filter(p => p.added).reduce((acc, p) => acc + p.value.split('\n').length - 1, 0)} lines
+              </span>
+            )}
+            {diffResult.filter(p => p.removed).length > 0 && (
+              <span className="text-red-400">
+                -{diffResult.filter(p => p.removed).reduce((acc, p) => acc + p.value.split('\n').length - 1, 0)} lines
+              </span>
+            )}
+          </div>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Diff Button Component
+function DiffButton({
+  clientContent,
+  upstreamContent,
+  title,
+}: {
+  clientContent: string
+  upstreamContent: string
+  title: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsOpen(true)}
+        className="h-6 px-2 text-[10px] gap-1"
+      >
+        <GitCompare className="h-3 w-3" />
+        Diff
+      </Button>
+      <DiffModal
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        title={title}
+        leftContent={clientContent}
+        rightContent={upstreamContent}
+      />
+    </>
+  )
 }
 
 export function RequestDetailPage() {
@@ -602,11 +833,24 @@ export function RequestDetailPage() {
                       </div>
 
                       <div className="flex flex-col min-h-0 flex-1 gap-6">
-                        <div className="flex flex-col flex-1 min-h-0 gap-3">
-                          <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                            <Code size={14} /> Headers
-                          </h5>
-                          <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                        <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '300px' }}>
+                          <div className="flex items-center justify-between shrink-0">
+                            <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                              <Code size={14} /> Headers
+                            </h5>
+                            <div className="flex items-center gap-2">
+                              <DiffButton
+                                clientContent={formatJSON(request.requestInfo?.headers || {})}
+                                upstreamContent={formatJSON(selectedAttempt.requestInfo.headers)}
+                                title="Compare Headers - Client vs Upstream"
+                              />
+                              <CopyButton
+                                content={formatJSON(selectedAttempt.requestInfo.headers)}
+                                label="Copy"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <Badge
                                 variant="outline"
@@ -615,18 +859,49 @@ export function RequestDetailPage() {
                                 JSON
                               </Badge>
                             </div>
-                            <pre className="text-xs font-mono text-text-secondary leading-relaxed">
+                            <pre className="text-xs font-mono text-text-secondary leading-relaxed whitespace-pre-wrap break-all">
                               {formatJSON(selectedAttempt.requestInfo.headers)}
                             </pre>
                           </div>
                         </div>
 
                         {selectedAttempt.requestInfo.body && (
-                          <div className="flex flex-col flex-2 min-h-0 gap-3">
-                            <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                              <Database size={14} /> Body
-                            </h5>
-                            <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                          <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '400px' }}>
+                            <div className="flex items-center justify-between shrink-0">
+                              <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                                <Database size={14} /> Body
+                              </h5>
+                              <div className="flex items-center gap-2">
+                                <DiffButton
+                                  clientContent={(() => {
+                                    try {
+                                      return formatJSON(JSON.parse(request.requestInfo?.body || '{}'))
+                                    } catch {
+                                      return request.requestInfo?.body || ''
+                                    }
+                                  })()}
+                                  upstreamContent={(() => {
+                                    try {
+                                      return formatJSON(JSON.parse(selectedAttempt.requestInfo.body))
+                                    } catch {
+                                      return selectedAttempt.requestInfo.body
+                                    }
+                                  })()}
+                                  title="Compare Body - Client vs Upstream"
+                                />
+                                <CopyButton
+                                  content={(() => {
+                                    try {
+                                      return formatJSON(JSON.parse(selectedAttempt.requestInfo.body))
+                                    } catch {
+                                      return selectedAttempt.requestInfo.body
+                                    }
+                                  })()}
+                                  label="Copy"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Badge
                                   variant="outline"
@@ -635,7 +910,7 @@ export function RequestDetailPage() {
                                   JSON
                                 </Badge>
                               </div>
-                              <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap leading-relaxed">
+                              <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-all leading-relaxed">
                                 {(() => {
                                   try {
                                     return formatJSON(
@@ -677,11 +952,17 @@ export function RequestDetailPage() {
                       </div>
 
                       <div className="flex flex-col min-h-0 flex-1 gap-6">
-                        <div className="flex flex-col flex-1 min-h-0 gap-3">
-                          <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                            <Code size={14} /> Headers
-                          </h5>
-                          <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                        <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '300px' }}>
+                          <div className="flex items-center justify-between shrink-0">
+                            <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                              <Code size={14} /> Headers
+                            </h5>
+                            <CopyButton
+                              content={formatJSON(selectedAttempt.responseInfo.headers)}
+                              label="Copy"
+                            />
+                          </div>
+                          <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <Badge
                                 variant="outline"
@@ -697,11 +978,23 @@ export function RequestDetailPage() {
                         </div>
 
                         {selectedAttempt.responseInfo.body && (
-                          <div className="flex flex-col flex-2 min-h-0 gap-3">
-                            <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                              <Database size={14} /> Body
-                            </h5>
-                            <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                          <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '400px' }}>
+                            <div className="flex items-center justify-between shrink-0">
+                              <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                                <Database size={14} /> Body
+                              </h5>
+                              <CopyButton
+                                content={(() => {
+                                  try {
+                                    return formatJSON(JSON.parse(selectedAttempt.responseInfo.body))
+                                  } catch {
+                                    return selectedAttempt.responseInfo.body
+                                  }
+                                })()}
+                                label="Copy"
+                              />
+                            </div>
+                            <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Badge
                                   variant="outline"
@@ -996,11 +1289,17 @@ function RequestDetailView({
               </div>
 
               <div className="flex flex-col min-h-0 flex-1 gap-6">
-                <div className="flex flex-col flex-1 min-h-0 gap-3">
-                  <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                    <Code size={14} /> Headers
-                  </h5>
-                  <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '300px' }}>
+                  <div className="flex items-center justify-between shrink-0">
+                    <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                      <Code size={14} /> Headers
+                    </h5>
+                    <CopyButton
+                      content={formatJSON(request.requestInfo.headers)}
+                      label="Copy"
+                    />
+                  </div>
+                  <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Badge
                         variant="outline"
@@ -1016,11 +1315,23 @@ function RequestDetailView({
                 </div>
 
                 {request.requestInfo.body && (
-                  <div className="flex flex-col flex-2 min-h-0 gap-3">
-                    <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                      <Database size={14} /> Body
-                    </h5>
-                    <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                  <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '400px' }}>
+                    <div className="flex items-center justify-between shrink-0">
+                      <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                        <Database size={14} /> Body
+                      </h5>
+                      <CopyButton
+                        content={(() => {
+                          try {
+                            return formatJSON(JSON.parse(request.requestInfo.body))
+                          } catch {
+                            return request.requestInfo.body
+                          }
+                        })()}
+                        label="Copy"
+                      />
+                    </div>
+                    <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Badge
                           variant="outline"
@@ -1069,11 +1380,17 @@ function RequestDetailView({
               </div>
 
               <div className="flex flex-col min-h-0 flex-1 gap-6">
-                <div className="flex flex-col flex-1 min-h-0 gap-3">
-                  <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                    <Code size={14} /> Headers
-                  </h5>
-                  <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '300px' }}>
+                  <div className="flex items-center justify-between shrink-0">
+                    <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                      <Code size={14} /> Headers
+                    </h5>
+                    <CopyButton
+                      content={formatJSON(request.responseInfo.headers)}
+                      label="Copy"
+                    />
+                  </div>
+                  <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Badge
                         variant="outline"
@@ -1089,11 +1406,23 @@ function RequestDetailView({
                 </div>
 
                 {request.responseInfo.body && (
-                  <div className="flex flex-col flex-2 min-h-0 gap-3">
-                    <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2 shrink-0">
-                      <Database size={14} /> Body
-                    </h5>
-                    <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group">
+                  <div className="flex flex-col min-h-0 gap-3" style={{ maxHeight: '400px' }}>
+                    <div className="flex items-center justify-between shrink-0">
+                      <h5 className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+                        <Database size={14} /> Body
+                      </h5>
+                      <CopyButton
+                        content={(() => {
+                          try {
+                            return formatJSON(JSON.parse(request.responseInfo.body))
+                          } catch {
+                            return request.responseInfo.body
+                          }
+                        })()}
+                        label="Copy"
+                      />
+                    </div>
+                    <div className="flex-1 rounded-lg border border-border bg-[#1a1a1a] p-4 overflow-auto shadow-inner relative group min-h-0">
                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Badge
                           variant="outline"

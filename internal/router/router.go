@@ -140,9 +140,6 @@ func (r *Router) Match(clientType domain.ClientType, projectID uint64) ([]*Match
 	// Only look for project-specific routes if ClientType is in EnabledCustomRoutes
 	if useProjectRoutes {
 		for _, route := range routes {
-			log.Printf("[Router] Route id=%d, clientType=%s, enabled=%v, projectID=%d",
-				route.ID, route.ClientType, route.IsEnabled, route.ProjectID)
-
 			if !route.IsEnabled {
 				continue
 			}
