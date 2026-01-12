@@ -53,72 +53,70 @@ export function ProjectDetailPage() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="flex flex-col h-full">
-        {/* Header & Navigation */}
-        <div className="flex-shrink-0 bg-surface-primary border-b border-border shadow-sm z-10">
-          <div className="h-[73px] flex items-center justify-between px-6">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate('/projects')}
-                className="h-8 w-8 p-0 hover:bg-surface-hover rounded-full"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-accent/10 rounded-lg">
-                  <FolderKanban size={20} className="text-accent" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-text-primary leading-tight">{project.name}</h2>
-                  <p className="text-xs text-text-secondary font-mono mt-0.5">
-                    {project.slug}
-                  </p>
-                </div>
-              </div>
+      {/* Header */}
+      <div className="h-[73px] flex items-center justify-between px-6 border-b border-border bg-surface-primary flex-shrink-0 z-10">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/projects')}
+            className="h-8 w-8 p-0 hover:bg-surface-hover rounded-full"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-accent/10 rounded-lg">
+              <FolderKanban size={20} className="text-accent" />
             </div>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleteProject.isPending}
-              className="opacity-80 hover:opacity-100"
-            >
-              {deleteProject.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Project
-                </>
-              )}
-            </Button>
-          </div>
-          
-          <div className="px-6">
-            <TabsList className="w-full justify-start h-auto p-0 bg-transparent border-none gap-6">
-              <TabsTrigger value="overview" className="px-0 py-3 rounded-none bg-transparent font-normal shadow-none hover:text-text-primary">
-                <LayoutGrid className="h-4 w-4 mr-2" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="routes" className="px-0 py-3 rounded-none bg-transparent font-normal shadow-none hover:text-text-primary">
-                <Route className="h-4 w-4 mr-2" />
-                Routes
-              </TabsTrigger>
-              <TabsTrigger value="sessions" className="px-0 py-3 rounded-none bg-transparent font-normal shadow-none hover:text-text-primary">
-                <Users className="h-4 w-4 mr-2" />
-                Sessions
-              </TabsTrigger>
-              <TabsTrigger value="requests" className="px-0 py-3 rounded-none bg-transparent font-normal shadow-none hover:text-text-primary">
-                <FileText className="h-4 w-4 mr-2" />
-                Requests
-              </TabsTrigger>
-            </TabsList>
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary leading-tight">{project.name}</h2>
+              <p className="text-xs text-text-secondary font-mono mt-0.5">
+                {project.slug}
+              </p>
+            </div>
           </div>
         </div>
+        <Button
+          variant="danger"
+          size="sm"
+          onClick={handleDelete}
+          disabled={deleteProject.isPending}
+          className="opacity-80 hover:opacity-100"
+        >
+          {deleteProject.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Project
+            </>
+          )}
+        </Button>
+      </div>
 
-        {/* Content */}
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-6 pt-4 pb-0 bg-background border-b border-border">
+          <TabsList className="bg-transparent border-b-0 w-full justify-start p-0 h-auto gap-4">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-surface-secondary data-[state=active]:shadow-sm border border-transparent rounded-md px-4 py-2">
+              <LayoutGrid className="h-4 w-4 mr-2" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="routes" className="data-[state=active]:bg-surface-secondary data-[state=active]:shadow-sm border border-transparent rounded-md px-4 py-2">
+              <Route className="h-4 w-4 mr-2" />
+              Routes
+            </TabsTrigger>
+            <TabsTrigger value="sessions" className="data-[state=active]:bg-surface-secondary data-[state=active]:shadow-sm border border-transparent rounded-md px-4 py-2">
+              <Users className="h-4 w-4 mr-2" />
+              Sessions
+            </TabsTrigger>
+            <TabsTrigger value="requests" className="data-[state=active]:bg-surface-secondary data-[state=active]:shadow-sm border border-transparent rounded-md px-4 py-2">
+              <FileText className="h-4 w-4 mr-2" />
+              Requests
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
         <div className="flex-1 overflow-hidden bg-background">
           <TabsContent value="overview" className="h-full overflow-auto animate-in fade-in-50 duration-200">
             <OverviewTab project={project} />
