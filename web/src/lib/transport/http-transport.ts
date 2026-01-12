@@ -41,6 +41,7 @@ export class HttpTransport implements Transport {
   private eventListeners: Map<WSMessageType, Set<EventCallback>> = new Map();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectPromise: Promise<void> | null = null;
 
   constructor(config: TransportConfig = {}) {
     this.config = {
@@ -356,24 +357,32 @@ export class HttpTransport implements Transport {
   // ===== 生命周期 =====
 
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        resolve();
-        return;
-      }
+    // Already connected
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
 
+    // Connection in progress, return existing promise to avoid race conditions
+    if (this.connectPromise && this.ws?.readyState === WebSocket.CONNECTING) {
+      return this.connectPromise;
+    }
+
+    this.connectPromise = new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.config.wsURL);
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
+        this.connectPromise = null;
         resolve();
       };
 
       this.ws.onerror = (error) => {
+        this.connectPromise = null;
         reject(error);
       };
 
       this.ws.onclose = () => {
+        this.connectPromise = null;
         this.scheduleReconnect();
       };
 
@@ -387,6 +396,8 @@ export class HttpTransport implements Transport {
         }
       };
     });
+
+    return this.connectPromise;
   }
 
   disconnect(): void {
