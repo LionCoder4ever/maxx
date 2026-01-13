@@ -3,8 +3,11 @@
  * Shows when a session requires project binding
  */
 
-import { useEffect, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
 import { FolderOpen, AlertCircle, Loader2, Clock, X } from 'lucide-react';
 import { useProjects, useUpdateSessionProject, useRejectSession } from '@/hooks/queries';
 import type { NewSessionPendingEvent } from '@/lib/transport/types';
@@ -60,25 +63,6 @@ export function ForceProjectDialog({
     }
   }, [remainingTime, event, onClose]);
 
-  // Handle ESC key - but don't allow closing without selecting
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      // Don't allow ESC to close - user must select a project
-      e.preventDefault();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (event) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.removeEventListener('keydown', handleKeyDown);
-        document.body.style.overflow = '';
-      };
-    }
-  }, [event, handleKeyDown]);
-
   const handleConfirm = async () => {
     if (!event || selectedProjectId === 0) return;
 
@@ -108,25 +92,13 @@ export function ForceProjectDialog({
 
   const clientColor = getClientColor(event.clientType);
 
-  return createPortal(
-    <>
-      {/* Overlay - 不允许点击关闭 */}
-      <div
-        className="dialog-overlay backdrop-blur-[2px]"
-        style={{ zIndex: 99998 }}
-      />
-
-      {/* Content */}
-      <div
-        className="dialog-content overflow-hidden"
-        style={{
-          zIndex: 99999,
-          width: '100%',
-          maxWidth: '28rem',
-          padding: 0,
-          background: 'var(--color-surface-primary)',
-        }}
-        onClick={e => e.stopPropagation()}
+  return (
+    <Dialog open={!!event} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="overflow-hidden p-0 w-full max-w-[28rem] bg-surface-primary"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
       >
         {/* Header with Gradient */}
         <div className="relative bg-gradient-to-b from-amber-900/20 to-transparent p-6 pb-4">
@@ -296,8 +268,7 @@ export function ForceProjectDialog({
             </div>
           </div>
         </div>
-      </div>
-    </>,
-    document.body
+      </DialogContent>
+    </Dialog>
   );
 }
