@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { SidebarNav } from './sidebar-nav'
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar'
 import { ForceProjectDialog } from '@/components/force-project-dialog'
 import { usePendingSession } from '@/hooks/use-pending-session'
 import { useSettings } from '@/hooks/queries'
@@ -16,6 +16,10 @@ export function AppLayout() {
     <SidebarProvider>
       <SidebarNav />
       <SidebarInset>
+        {/* Mobile header with sidebar trigger */}
+        <header className="flex h-12 items-center gap-2 border-b px-4 md:hidden">
+          <SidebarTrigger />
+        </header>
         <div className="@container/main h-full">
           <Outlet />
         </div>
